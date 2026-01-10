@@ -1,0 +1,41 @@
+# Dottò Backend - Requirements
+# Python 3.11+
+
+# FastAPI & Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+alembic==1.13.1
+
+# Validation & Settings
+pydantic==2.5.3
+pydantic-settings==2.1.0
+email-validator==2.1.0
+phonenumbers==8.13.27
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# HTTP Client
+httpx==0.26.0
+
+# Supabase (for Storage)
+supabase==2.3.4
+
+# SMS
+twilio==8.10.3
+
+# Image processing
+Pillow==10.2.0
+
+# QR Code generation
+qrcode[pil]==7.4.2
+
+# Utilities
+python-dotenv==1.0.0
+
