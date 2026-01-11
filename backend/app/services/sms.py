@@ -88,3 +88,4 @@ Mostra questo QR per ritirare la tua bici.
 """
     return await send_sms(phone, message)
 
+

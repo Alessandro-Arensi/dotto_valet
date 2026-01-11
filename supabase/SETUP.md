@@ -74,3 +74,4 @@ cd backend
 python -c "from app.database import engine; print('OK')"
 ```
 
+

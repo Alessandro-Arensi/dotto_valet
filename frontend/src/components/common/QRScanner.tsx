@@ -114,3 +114,4 @@ export default function QRScanner({ onScan, onClose }: QRScannerProps) {
   );
 }
 
+

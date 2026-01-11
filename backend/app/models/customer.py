@@ -31,3 +31,4 @@ class Customer(Base):
     def __repr__(self) -> str:
         return f"<Customer {self.phone_normalized}>"
 
+

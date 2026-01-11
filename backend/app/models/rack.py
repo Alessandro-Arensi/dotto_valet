@@ -32,3 +32,4 @@ class Rack(Base):
     def __repr__(self) -> str:
         return f"<Rack {self.rack_number} @ Event {self.event_id}>"
 
+

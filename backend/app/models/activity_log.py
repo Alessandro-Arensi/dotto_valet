@@ -35,3 +35,4 @@ class ActivityLog(Base):
     def __repr__(self) -> str:
         return f"<ActivityLog {self.action} @ {self.created_at}>"
 
+

@@ -76,3 +76,4 @@ class TokenQR(BaseModel):
 # Update forward refs
 TokenInfo.model_rebuild()
 
+

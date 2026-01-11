@@ -251,3 +251,4 @@ SELECT
     'Rastrelliera ' || n
 FROM generate_series(1, 10) AS n;
 
+

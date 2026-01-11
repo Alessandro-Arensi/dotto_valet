@@ -76,3 +76,4 @@ class AvailabilityInfo(BaseModel):
 # Update forward refs
 EventAvailability.model_rebuild()
 
+

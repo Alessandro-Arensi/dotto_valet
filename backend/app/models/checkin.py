@@ -50,3 +50,4 @@ class Checkin(Base):
     def __repr__(self) -> str:
         return f"<Checkin {self.token_id} @ Rack {self.rack_id} Slot {self.slot_number}>"
 
+

@@ -129,3 +129,4 @@ def get_wallet_instructions() -> dict:
         "documentation": "https://developers.google.com/wallet/generic",
     }
 
+

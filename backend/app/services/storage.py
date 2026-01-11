@@ -96,3 +96,4 @@ async def delete_bike_photo(photo_url: str) -> bool:
         print(f"[Storage] Failed to delete photo: {e}")
         return False
 
+

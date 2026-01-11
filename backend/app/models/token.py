@@ -50,3 +50,4 @@ class Token(Base):
     def __repr__(self) -> str:
         return f"<Token {self.code}>"
 
+
