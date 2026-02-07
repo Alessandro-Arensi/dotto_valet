@@ -1,18 +1,60 @@
-# 🚲 Dottò — Sistema Valet Biciclette per Eventi
+# 🚲 Dottò — Sistema Valet Biciclette per Eventi (100% Gratuito & Self-Hosted con WhatsApp)
 
 > Un progetto di [Scintilla Cicloprogetti](https://www.scintillacicloprogetti.it/)
 
+**Aggiornamento Tecnologico**: **PocketBase** + **Brevo WhatsApp Business API** (tier gratuito). Hosting su **Hetzner Cloud VPS CX23** (€3.49/mese). **Foto OBBLIGATORIA solo per token fisici**, **zero foto per token digitali** (sempre).
+
 ## 📋 Panoramica del Progetto
 
+Sistema completo gestione valet bici eventi con **token digitali QR** (default, Wallet ready) e **token fisici** (fallback). Telefono opzionale per **WhatsApp + SMS** oltre email.
+
+**Aggiornamento Check-in:**
+- ✅ **Token digitali**: **NO FOTO** (recuperabile via email)
+- ✅ **Token fisici**: **FOTO OBBLIGATORIA** (bici senza smartphone)
+
 Progetta un sistema software completo per la gestione di un servizio valet per biciclette durante eventi. Il sistema supporta:
-- **Token digitali** (QR via smartphone, integrabile con Google Wallet) — **preferenza default**
+- **Token digitali** (QR via smartphone, integrabile con Google Wallet e Apple Wallet) — **preferenza default**
 - **Token fisici** (gettoni plastificati con QR riutilizzabile) — **fallback per utenti senza smartphone**
 
 ### Obiettivi Primari
-1. **Minima frizione utente**: registrazione con solo numero di telefono
+1. **Minima frizione utente**: registrazione con solo email (telefono opzionale per SMS/WhatsApp - in valutazione)
 2. **Prenotazione anticipata**: l'utente può prenotare prima dell'evento vedendo la disponibilità
 3. **Efficienza operatore**: check-in rapido con modalità veloce nei momenti di punta
 4. **Flessibilità**: adattamento dinamico al traffico (posizione auto, skip foto)
+
+---
+
+## 🌿 Branch e ambienti (dev / prod)
+
+- **`develop`**: ambiente di sviluppo. Lavorare sempre qui per feature e fix.
+- **`main`**: produzione. Solo release stabili; da qui si creano gli artifact di prod.
+
+Dettaglio: [docs/BRANCHES.md](docs/BRANCHES.md).
+
+**Setup sviluppo:** clonare il repo, poi `git checkout develop`. Creare il venv Python e avviare i container con il Makefile (vedi sotto).
+
+---
+
+## 🛠 Setup sviluppo (Makefile e venv)
+
+**Prerequisiti:** Docker e Docker Compose, Node.js (per frontend), **Python 3.11** con modulo venv (su Pop!_OS/Debian/Ubuntu: `sudo apt install python3.11 python3.11-venv`). Per questo progetto usiamo **solo Python 3.11** nel venv (`make venv` crea `.venv` con `python3.11`).  
+**Nota:** In `.venv/bin/` vedi `python`, `python3` e magari `python3.10`: sono *symlink* allo stesso interprete con cui è stato creato il venv. Se il venv è stato creato con 3.10, ricrealo con 3.11: `rm -rf .venv` e poi `make venv`. **Non disinstallare** il Python di sistema (`python3`, `python3.10`): il sistema operativo e i pacchetti (apt, GNOME, ecc.) ne hanno bisogno; tieni 3.11 *affiancato* e usa solo 3.11 per Dottò.
+
+| Comando | Descrizione |
+|--------|-------------|
+| `make venv` | Crea `.venv` e installa le dipendenze Python dal **backend/pyproject.toml** (inclusi black, ruff, pytest in [dev]). |
+| `make install-deps` | Reinstalla il backend in modalità editable con extra dev in `.venv`. |
+| `make format` | Formatta il codice con **black** (`backend/app`). |
+| `make lint` | Lint con **ruff** (solo check). |
+| `make lint-fix` | Lint con ruff e auto-fix + format con ruff. |
+| `make build` | Build immagini Docker. |
+| `make up` | Avvia tutti i servizi (PocketBase, db, backend, frontend). |
+| `make down` | Ferma i container. |
+| `make reload` | down + build + up (ricarica tutto). |
+| `make test` | Esegue test backend (pytest) e frontend (lint/test). |
+| `make clean` | Rimuove container, volumi e `.venv`. |
+
+Per questo progetto **non** usare dipendenze Python installate in sistema: creare e usare sempre il venv con `make venv` e attivarlo con `source .venv/bin/activate` quando lavori da terminale (es. pytest, script).
 
 ---
 
@@ -22,13 +64,13 @@ Progetta un sistema software completo per la gestione di un servizio valet per b
 
 | Dato | Obbligatorio | Uso |
 |------|--------------|-----|
-| Numero di telefono | ✅ | Ricezione ticket QR via SMS/WhatsApp |
-| Email | ❌ | Conferma prenotazione + newsletter (opt-in) |
+| Email | ✅ | Conferma prenotazione + link QR via email |
+| Numero di telefono | ❌ | Opzionale: ricezione ticket QR via SMS o WhatsApp (in valutazione) |
 
 - **Zero account**: nessuna password, nessuna registrazione complessa
 - **Prenotazione pre-evento**: l'utente vede i posti disponibili e prenota in anticipo
-- **Ticket QR** inviato istantaneamente via SMS/WhatsApp
-- **Integrazione Google Wallet**: il QR è aggiungibile direttamente al wallet con un tap
+- **Ticket QR** inviato via email (sempre) e SMS o WhatsApp (se telefono fornito - in valutazione)
+- **Integrazione Wallet**: il QR è aggiungibile direttamente a Google Wallet o Apple Wallet con un tap
 - **Link universale**: `https://dotto.bike/t/{token_id}` funziona per visualizzare QR, check-in e check-out
 
 ### Operator Experience
@@ -46,10 +88,10 @@ Progetta un sistema software completo per la gestione di un servizio valet per b
 flowchart TD
     subgraph PRE["📅 PRE-EVENTO (Utente)"]
         A[Utente visita landing page evento] --> B{Posti disponibili?}
-        B -->|Sì ✅| C[Inserisce telefono + email opzionale]
-        C --> D[Riceve QR prenotazione via SMS]
+        B -->|Sì ✅| C[Inserisce email + telefono opzionale]
+        C --> D["Riceve QR via email e opz. SMS/WhatsApp"]
         D --> E[🎫 Prenotazione confermata]
-        D --> F[📲 Opzione: Aggiungi a Google Wallet]
+        D --> F[📲 Opzione: Aggiungi a Google/Apple Wallet]
         B -->|No ❌| G[Mostra sold out / lista attesa]
     end
     
@@ -57,32 +99,32 @@ flowchart TD
         E --> H[Cliente arriva con bici]
         H --> I{Ha prenotazione?}
         I -->|Sì| J[Mostra QR prenotazione]
-        I -->|No| K{Ha smartphone?}
-        K -->|Sì| L[Operatore crea token digitale]
-        K -->|No 📵| M[Operatore usa token fisico]
-        J --> N[Operatore scansiona QR]
-        L --> N
-        M --> O[Scansiona gettone fisico]
-        O --> N
-        N --> P{Modalità veloce ON?}
-        P -->|Sì ⚡| Q[Solo posizione - skip foto/desc]
-        P -->|No| R{Posizione auto ON?}
-        R -->|Sì| S[Sistema assegna slot]
-        R -->|No| T[Operatore seleziona manualmente]
-        S --> U{Foto O descrizione}
-        T --> U
-        U --> V[✅ Check-in completato]
-        Q --> V
+        I -->|No| K[Walk-in: Check-in in loco]
+        K --> L{Ha smartphone?}
+        L -->|Sì| M[Operatore crea token digitale]
+        L -->|No 📵| N[Operatore usa token fisico]
+        J --> O[Operatore scansiona QR]
+        M --> O
+        N --> P[Scansiona gettone fisico]
+        P --> O
+        O --> Q{Posizione auto ON?}
+        Q -->|Sì| R[Sistema assegna slot]
+        Q -->|No| S[Operatore seleziona manualmente]
+        R --> T[✅ Check-in completato]
+        S --> T
+        T --> U[Operatore può chiudere slot manualmente se bici parcheggiata male o cargo]
     end
     
     subgraph CHECKOUT["🔓 CHECK-OUT"]
-        V --> W[Cliente torna per ritiro]
+        T --> W[Cliente torna per ritiro]
         W --> X[Mostra stesso QR / gettone]
         X --> Y[Operatore scansiona]
-        Y --> Z[Sistema mostra posizione bici]
-        Z --> AA[Operatore recupera bici]
-        AA --> AB[Conferma restituzione]
-        AB --> AC[✅ Bici restituita - Token chiuso]
+        Y --> Z{Cliente ha prenotazione?}
+        Z -->|Sì ✅| AA[✅ Check-out completato - Token chiuso]
+        Z -->|No ❌ Prenotazione persa| AB[Ricerca identificazione bici/posto]
+        AB --> AC[Verifica posizione e foto bici]
+        AC --> AD[Conferma restituzione]
+        AD --> AA
     end
 ```
   
@@ -96,19 +138,24 @@ flowchart TD
 
 L'utente può:
 - Vedere disponibilità posti in tempo reale
-- Prenotare inserendo solo il numero di telefono
-- Aggiungere email (opzionale) per conferma e newsletter
-- Ricevere QR via SMS/WhatsApp
-- Aggiungere QR a Google Wallet
+- Prenotare inserendo email (obbligatoria)
+- Aggiungere telefono (opzionale) per ricevere QR via SMS o WhatsApp (in valutazione)
+- Ricevere QR via email (sempre) e SMS/WhatsApp (se telefono fornito - in valutazione)
+- Aggiungere QR a Google Wallet o Apple Wallet
+- **Checkbox opzionale newsletter**: opt-in per aggiornamenti su prossimi eventi
 
 **Vincoli:**
-- Un solo token attivo per numero di telefono per evento
+- Un solo token attivo per email per evento
 - Prenotazione valida fino a fine evento (o orario configurabile)
 - No-show: token scade automaticamente
 
 ### 2. Check-in (Lato Operatore)
 
-**Priorità tipo token:**
+**Tipi di check-in:**
+1. **Con prenotazione** — cliente ha già prenotato online, mostra QR
+2. **Walk-in** — check-in in loco senza prenotazione
+
+**Priorità tipo token (per walk-in):**
 1. **Token digitale** (default) — cliente con smartphone
 2. **Token fisico** (fallback) — cliente senza smartphone
 
@@ -119,45 +166,56 @@ L'utente può:
 | Standard | Manuale | Traffico normale |
 | Posizione Auto | Automatica | Traffico medio-alto |
 
-**Logica Foto Bici:**
-- **Token DIGITALE** → ❌ Foto NON richiesta (il cliente può sempre recuperare il QR dal telefono o tramite numero)
-- **Token FISICO** → ✅ Foto OBBLIGATORIA (serve per identificare la bici in caso di smarrimento del gettone)
+**Gestione slot:**
+- Operatore può **chiudere manualmente** slot della rastrelliera
+- Utile per: bici parcheggiate male, bici cargo che occupano più spazio, slot danneggiati
+- Slot chiusi non vengono assegnati automaticamente dal sistema
 
-> ⚠️ **Perché solo per token fisici?**  
-> Con un token digitale, se il cliente "perde" il QR può sempre recuperarlo tramite il suo numero di telefono. Con un token fisico non c'è questo legame, quindi la foto è l'unico modo per identificare la bici.
+**Verifica bici (check-out):**
+- La **foto bici non è usata** per la verifica al check-out.
+- **Metodo di verifica**: solo **posizione** (rastrelliera + slot). Il cliente **descrive la propria bici** all'operatore, che si reca in posizione e **verifica visivamente** che corrisponda prima di confermare la restituzione.
 
 ### 3. Check-out (Ritiro Bici)
 
+**Flusso standard (cliente con prenotazione):**
 - Cliente mostra QR (digitale o gettone fisico)
 - Operatore scansiona
-- Sistema mostra: posizione bici, foto (se presente), orario check-in
-- Operatore recupera e restituisce bici
-- Token marcato come `checked_out`
+- Sistema verifica che il cliente abbia la prenotazione
+- ✅ Check-out completato — Token marcato come `checked_out`
 - Token fisici: tornano disponibili per riuso
+
+**Flusso fallback (prenotazione persa):**
+- Cliente non ha QR/gettone
+- Operatore attiva ricerca per posizione/orario
+- Sistema mostra: **posizione bici** (rastrelliera + slot), orario check-in
+- Il **cliente descrive la bici** all'operatore (colore, tipo, accessori, ecc.)
+- Operatore si reca in posizione e **verifica visivamente** che la bici corrisponda alla descrizione
+- Conferma restituzione con override manuale
+- Token marcato come `checked_out`
 
 ### 4. Fallback Perdita Token
 
 **Token DIGITALE smarrito:**
 ```
 Cliente dice di aver perso il QR:
-└── Ricerca per numero di telefono → QR recuperato istantaneamente ✅
+└── Ricerca per email → QR recuperato istantaneamente ✅
 ```
 
 **Token FISICO smarrito:**
 ```
 Cliente ha perso il gettone:
 ├── Ricerca per fascia oraria check-in
-├── Verifica visiva con foto archiviate 📸
-├── Confronto bici fisica con foto
+├── Sistema mostra posizione (rastrelliera + slot)
+├── Cliente descrive la bici all'operatore
+├── Operatore verifica visivamente in loco
 └── Rilascio manuale con log di override + motivo
 ```
-
-> 💡 Ecco perché la foto è obbligatoria solo per i token fisici: è l'unico modo per identificare la bici senza un legame digitale.
 
 ### 5. Dashboard Operatori/Admin
 
 - Lista bici attualmente parcheggiate
-- Mappa visiva rastrelliere con slot occupati/liberi
+- Mappa visiva rastrelliere con slot occupati/liberi/chiusi
+- Gestione slot chiusi manualmente (per bici cargo, slot danneggiati, bici parcheggiate male)
 - Storico check-in/check-out con filtri
 - Statistiche evento in tempo reale
 - Gestione multi-evento
@@ -194,8 +252,9 @@ Cliente ha perso il gettone:
 | Pydantic | Validazione dati |
 | Alembic | Migrazioni DB |
 | python-jose | JWT tokens |
-| Twilio / MessageBird | SMS/WhatsApp |
+| Twilio / MessageBird | SMS/WhatsApp (in valutazione) |
 | google-auth | Google Wallet API |
+| passkit | Apple Wallet API |
 | Pillow | Elaborazione immagini |
 
 ### Database — PostgreSQL
@@ -220,6 +279,128 @@ Cliente ha perso il gettone:
 | Hosting Frontend | Vercel / Cloudflare Pages |
 | Hosting Backend | Railway / Render / Fly.io |
 | Database | Supabase / Neon / Railway |
+
+### 🆓 Stack Tecnologico (100% Gratuito / Self-Hosted)
+
+| Componente | Tecnologia | Uso |
+|------------|------------|-----|
+| **Backend** | **PocketBase** | DB/Auth/API/Realtime/Storage |
+| **Frontend** | React + Mantine | PWA mobile-first |
+| **Email** | **Brevo SMTP** | 300 email/giorno free |
+| **WhatsApp** | **Brevo WhatsApp API** | Notifiche QR gratuite |
+| **Hosting** | **Hetzner CX23** | €3.49/mese, 4GB RAM, 40GB NVMe |
+
+---
+
+## 🔄 Flusso Check-in Semplificato (NO Modalità Veloce)
+
+```
+CHECK-IN (Giorno Evento)
+├── Cliente arriva con bici
+├── Ha prenotazione?
+│   ├── Sì → Scansiona QR digitale → ✅ NO FOTO → Assegna slot
+│   └── No → Walk-in
+│       ├── Ha smartphone? → Token DIGITALE → ✅ NO FOTO
+│       └── NO smartphone → Token FISICO → 📸 FOTO OBBLIGATORIA
+└── Posizione auto/manuale → ✅ Check-in completato
+```
+
+## 🧩 Funzionalità Check-in Aggiornate
+
+### Check-in Token Digitale (Default)
+
+```
+┌─────────────────────────────────────┐
+│  🚲 Dottò    [Evento ▼]      PIN:***│
+│  🟢 94/120  │ 26 liberi            │
+├─────────────────────────────────────┤
+│  ══════════════════════════════     │
+│  🎫 TOKEN DIGITALE                 │
+│  ┌─────────────────────────────┐    │
+│  │   📷 SCANSIONA QR CLIENTE   │    │
+│  └─────────────────────────────┘    │
+│                                     │
+│  📍 Rast. 3, Slot 7 (auto)         │
+│  ✅ NESSUNA FOTO RICHIESTA          │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+### Check-in Token Fisico (Fallback)
+
+```
+┌─────────────────────────────────────┐
+│  TOKEN FISICO 📵  ← Cliente NO smartphone │
+├─────────────────────────────────────┤
+│  📷 SCANSIONA GETTONE FISICO        │
+│  Token: DOT-K8M2  ✅ Disponibile    │
+├─────────────────────────────────────┤
+│  📸 FOTO BICI ★OBBLIGATORIA★       │
+│  ┌─────────────────────────────┐    │
+│  │  📷 [Camera Preview]        │    │
+│  │  Compila: 800x600, 80% JPEG │    │
+│  └─────────────────────────────┘    │
+├─────────────────────────────────────┤
+│  📍 Rast. 3, Slot 7                 │
+│  [ ✅ CONFERMA CHECK-IN ]           │
+└─────────────────────────────────────┘
+```
+
+---
+
+## 📋 Schema DB PocketBase Aggiornato
+
+```
+tokens
+├── event (relation)
+├── email ★ (unique per evento)
+├── phone (E.164, optional)
+├── token_code "DOT-XXXX"
+├── token_type ("digital"|"physical")  ← NUOVO
+├── status (pending/checked_in/checked_out)
+├── rack_id, slot_num
+├── photo_url (storage)  ← SOLO token fisici
+├── whatsapp_sent (bool)
+```
+
+**Logica foto** (hook PocketBase: validazione foto obbligatoria per token fisici):
+
+```js
+// Hook PocketBase: Validazione foto obbligatoria
+onRecordBeforeCreateRequest((e) => {
+  if (e.record.get('token_type') === 'physical' && !e.record.get('photo_url')) {
+    throw new BadRequestError('Foto bici obbligatoria per token fisici');
+  }
+});
+```
+
+---
+
+## 📱 Interfacce Operatore Aggiornate
+
+### Walk-in: Scelta Token Type
+
+```
+🚶 Walk-in: Nuovo cliente
+✉️ Email cliente *
+📱 Telefono (opzionale)
+
+┌─────────────────┐ ┌─────────────────┐
+│ 🎫 Token        │ │ 📵 Token        │
+│ DIGITALE        │ │ FISICO          │
+│ ✅ NO FOTO      │ │ 📸 FOTO ★OBBL★ │
+└─────────────────┘ └─────────────────┘
+```
+
+### Dashboard Operatore (statistiche realtime)
+
+```
+📊 STATISTICHE REALTIME
+Token Digitali: 78  (NO foto)
+Token Fisici:   4   (📸 foto scattate)
+Slot Occupati:  82/120
+📵 Clienti NO smartphone: 4%
+```
 
 ---
 
@@ -255,23 +436,31 @@ Cliente ha perso il gettone:
 │   Prenota il tuo posto GRATIS       │
 │   e salta la coda all'ingresso!     │
 │                                     │
-│   📱 Numero di telefono *           │
+│   ✉️ Email *                         │
+│   ┌─────────────────────────────┐   │
+│   │ mario@email.it               │   │
+│   └─────────────────────────────┘   │
+│                                     │
+│   📱 Numero di telefono (opzionale) │
 │   ┌─────────────────────────────┐   │
 │   │ 🇮🇹 +39 │ 333 1234567        │   │
 │   └─────────────────────────────┘   │
 │                                     │
-│   ✉️ Email (opzionale)              │
-│   ┌─────────────────────────────┐   │
-│   │ mario@email.it              │   │
-│   └─────────────────────────────┘   │
-│   ☐ Tienimi aggiornato su           │
-│     prossimi eventi                 │
+│   ☐ Newsletter (opzionale)          │
+│     Tienimi aggiornato su prossimi  │
+│     eventi                          │
+│                                     │
+│   💡 Riceverai il QR via email      │
+│      (+ SMS/WhatsApp se fornisci     │
+│       il telefono - in valutazione)  │
 │                                     │
 │   ┌─────────────────────────────┐   │
 │   │      🎫 PRENOTA ORA         │   │
 │   └─────────────────────────────┘   │
 │                                     │
-│   📲 Riceverai il QR via SMS        │
+│   📧 Riceverai il QR via email      │
+│   📲 (+ SMS/WhatsApp se fornisci     │
+│      il telefono - in valutazione)  │
 │                                     │
 └─────────────────────────────────────┘
 ```
@@ -298,7 +487,8 @@ Cliente ha perso il gettone:
 │   📅 15 Gen 2026                    │
 │                                     │
 │   ┌─────────────────────────────┐   │
-│   │  📲 Aggiungi a Google Wallet │   │
+│   │  📲 Aggiungi a Wallet        │   │
+│   │     (Google/Apple)           │   │
 │   └─────────────────────────────┘   │
 │                                     │
 │   ┌─────────────────────────────┐   │
@@ -306,8 +496,9 @@ Cliente ha perso il gettone:
 │   └─────────────────────────────┘   │
 │                                     │
 │   ─────────────────────────────     │
-│   📱 QR inviato a +39 333****567    │
-│   ✉️ Conferma inviata a m***@e...   │
+│   ✉️ QR inviato a m***@e...         │
+│   📱 (+ SMS/WhatsApp a +39 333****567)│
+│      (se telefono fornito - in valutazione)│
 │                                     │
 │   Mostra questo QR all'ingresso     │
 │   con la tua bici!                  │
@@ -315,7 +506,7 @@ Cliente ha perso il gettone:
 └─────────────────────────────────────┘
 ```
 
-### 3. SMS/WhatsApp Conferma
+### 3. SMS/WhatsApp Conferma (in valutazione)
 
 ```
 🚲 Dottò - CONCERTO AL PARCO
@@ -325,7 +516,9 @@ Cliente ha perso il gettone:
 🎫 Il tuo QR per il check-in:
 https://dotto.bike/t/DOT-K8M2
 
-📲 Aggiungi a Google Wallet:
+📧 QR inviato anche via email
+
+📲 Aggiungi a Google/Apple Wallet:
 https://dotto.bike/wallet/DOT-K8M2
 
 📍 Presenta questo QR all'ingresso
@@ -360,15 +553,19 @@ Rispondi a questo messaggio.
 │                                     │
 │  ─────── oppure ───────             │
 │                                     │
-│  📱 Nuovo cliente (senza prenot.)   │
+│  🚶 Walk-in: Nuovo cliente          │
+│     (senza prenotazione)             │
+│  ✉️ Email cliente *                 │
+│  ┌─────────────────────────────┐    │
+│  │ mario@email.it              │    │
+│  └─────────────────────────────┘    │
+│  📱 Telefono (opzionale)             │
 │  ┌─────────────────────────────┐    │
 │  │ +39 │ Telefono cliente      │    │
 │  └─────────────────────────────┘    │
-│  ✉️ Email (opzionale)               │
-│  ┌─────────────────────────────┐    │
-│  │                             │    │
-│  └─────────────────────────────┘    │
-│  ☐ Newsletter                       │
+│  ☐ Newsletter (opzionale)           │
+│     Tienimi aggiornato su prossimi  │
+│     eventi                          │
 │                                     │
 │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄   │
 │  📵 Cliente senza smartphone?       │
@@ -388,6 +585,14 @@ Rispondi a questo messaggio.
 │  │ Rast. ▼ │  │ Slot  ▼ │         │
 │  └──────────┘  └──────────┘         │
 │                                     │
+│  🔒 Gestione Slot                   │
+│  ┌─────────────────────────────┐    │
+│  │ [ Chiudi slot manualmente ] │    │
+│  │ Utile per: bici cargo,      │    │
+│  │ slot danneggiati, bici      │    │
+│  │ parcheggiate male          │    │
+│  └─────────────────────────────┘    │
+│                                     │
 ├─────────────────────────────────────┤
 │                                     │
 │  ┌─────────────────────────────┐    │
@@ -396,7 +601,7 @@ Rispondi a questo messaggio.
 │                                     │
 │  💡 Token digitale: nessuna foto    │
 │     richiesta (recuperabile via     │
-│     numero di telefono)             │
+│     email)                          │
 │                                     │
 └─────────────────────────────────────┘
 ```
@@ -433,25 +638,6 @@ Rispondi a questo messaggio.
 │  └─────────────────────────────┘    │
 │                                     │
 ├─────────────────────────────────────┤
-│  📸 FOTO BICI (OBBLIGATORIA)        │
-│                                     │
-│  ┌──────────────────────────────┐   │
-│  │                              │   │
-│  │     [ 📷 SCATTA FOTO ]       │   │
-│  │                              │   │
-│  │  ⚠️ La foto è necessaria per │   │
-│  │  identificare la bici in     │   │
-│  │  caso di smarrimento del     │   │
-│  │  gettone                     │   │
-│  │                              │   │
-│  └──────────────────────────────┘   │
-│                                     │
-│  ┌──────────┐                       │
-│  │  🖼️      │  ✅ Foto acquisita    │
-│  └──────────┘                       │
-│                                     │
-├─────────────────────────────────────┤
-│                                     │
 │  ┌─────────────────────────────┐    │
 │  │      ✅ CONFERMA CHECK-IN   │    │
 │  └─────────────────────────────┘    │
@@ -459,7 +645,9 @@ Rispondi a questo messaggio.
 │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    │
 │  📋 RICORDA:                        │
 │  Consegna il gettone al cliente     │
-│  dopo aver completato il check-in   │
+│  dopo aver completato il check-in.  │
+│  Al ritiro: verifica per posizione  │
+│  + descrizione bici dal cliente.    │
 │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    │
 │                                     │
 └─────────────────────────────────────┘
@@ -482,28 +670,58 @@ Rispondi a questo messaggio.
 │  ─────────────────────────────      │
 │                                     │
 │  🎫 DOT-K8M2                        │
-│  📱 +39 333 ****567                 │
-│                                     │
-│  ┌─────────────────────────────┐    │
-│  │                             │    │
-│  │    📍 RASTRELLIERA 3        │    │
-│  │       SLOT 7                │    │
-│  │                             │    │
-│  │    ⏰ Check-in: 17:42       │    │
-│  │                             │    │
-│  └─────────────────────────────┘    │
-│                                     │
-│  ┌─────────────────────────────┐    │
-│  │  🖼️ Foto bici               │    │
-│  │  [immagine della bici]      │    │  ← solo token fisici
-│  └─────────────────────────────┘    │
+│  ✅ Prenotazione verificata        │
 │                                     │
 │  ┌─────────────────────────────┐    │
 │  │   ✅ CONFERMA RESTITUZIONE  │    │
 │  └─────────────────────────────┘    │
 │                                     │
+│  ─────────────────────────────      │
+│                                     │
 │  ┌─────────────────────────────┐    │
-│  │   ❓ Token smarrito?        │    │
+│  │   ❓ Prenotazione persa?    │    │
+│  │   [ Cerca bici/posto → ]  │    │
+│  └─────────────────────────────┘    │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+**Flusso con prenotazione persa:**
+
+```
+┌─────────────────────────────────────┐
+│  ← Indietro   🔍 RICERCA BICI      │
+├─────────────────────────────────────┤
+│                                     │
+│  ⚠️ Prenotazione persa -            │
+│     Identificazione bici/posto      │
+│                                     │
+│  ✉️ Email (token digitale)          │
+│  ┌─────────────────────────────┐    │
+│  │ mario@email.it               │    │
+│  └─────────────────────────────┘    │
+│                                     │
+│  ─── oppure ───                     │
+│                                     │
+│  ⏰ Orario check-in (token fisico)  │
+│                                     │
+│  [       🔍 CERCA        ]          │
+│                                     │
+├─────────────────────────────────────┤
+│  📋 RISULTATI                        │
+│                                     │
+│  ┌─────────────────────────────┐    │
+│  │ 🎫 DOT-K8M2                 │    │
+│  │ 📍 Rast. 3, Slot 7          │    │
+│  │ ⏰ 17:42                     │    │
+│  │                             │    │
+│  │ Cliente descrive la bici →  │    │
+│  │ operatore verifica in loco  │    │
+│  │         [ Seleziona → ]     │    │
+│  └─────────────────────────────┘    │
+│                                     │
+│  ┌─────────────────────────────┐    │
+│  │   ✅ CONFERMA RESTITUZIONE  │    │
 │  └─────────────────────────────┘    │
 │                                     │
 └─────────────────────────────────────┘
@@ -517,11 +735,11 @@ Rispondi a questo messaggio.
 ├─────────────────────────────────────┤
 │                                     │
 │  💡 Token DIGITALE smarrito?        │
-│     Basta il numero di telefono!    │
+│     Basta l'email!                  │
 │                                     │
-│  📱 Numero telefono cliente         │
+│  ✉️ Email cliente                   │
 │  ┌─────────────────────────────┐    │
-│  │ +39 333 1234567             │    │
+│  │ mario@email.it               │    │
 │  └─────────────────────────────┘    │
 │                                     │
 │  [     🔍 CERCA TOKEN      ]        │
@@ -551,7 +769,7 @@ Rispondi a questo messaggio.
 │                                     │
 │  ⚠️ SOLO per token FISICI smarriti  │
 │     (i digitali si recuperano via   │
-│      numero di telefono)            │
+│      email)                          │
 │                                     │
 │  ⏰ Orario approssimativo check-in  │
 │  ┌────────────┐ ┌────────────┐      │
@@ -561,19 +779,15 @@ Rispondi a questo messaggio.
 │  [       🔍 CERCA        ]          │
 │                                     │
 ├─────────────────────────────────────┤
-│  📋 RISULTATI (confronta con bici)  │
+│  📋 RISULTATI (posizione + descrizione bici)  │
 │                                     │
 │  ┌─────────────────────────────┐    │
 │  │ 🎫 DOT-K8M2  📵             │    │
 │  │ 📍 Rast. 3, Slot 7          │    │
 │  │ ⏰ 17:42                    │    │
-│  │ ┌────────────────────┐      │    │
-│  │ │                    │      │    │
-│  │ │   🖼️ FOTO BICI     │      │    │
-│  │ │                    │      │    │
-│  │ └────────────────────┘      │    │
-│  │  ⚠️ Confronta questa foto   │    │
-│  │    con la bici del cliente  │    │
+│  │                             │    │
+│  │ Cliente descrive la bici →  │    │
+│  │ operatore verifica in loco  │    │
 │  │         [ Seleziona → ]     │    │
 │  └─────────────────────────────┘    │
 │                                     │
@@ -605,13 +819,15 @@ src/
 │   ├── common/
 │   │   ├── QRScanner.tsx
 │   │   ├── PhoneInput.tsx
-│   │   └── PhotoCapture.tsx      # Per foto bici token fisici
+│   │   └── PhotoCapture.tsx      # Solo per token fisici
 │   ├── reservation/
 │   │   ├── AvailabilityCard.tsx
 │   │   └── ReservationForm.tsx
 │   ├── checkin/
+│   │   ├── TokenTypeSelector.tsx     # NUOVO: Digital vs Physical
+│   │   ├── DigitalCheckin.tsx        # NO foto, scanner QR
+│   │   ├── PhysicalCheckin.tsx       # PhotoCapture obbligatorio
 │   │   ├── PositionSelector.tsx
-│   │   ├── PhysicalTokenPhoto.tsx  # Foto obbligatoria per token fisici
 │   │   └── CheckinForm.tsx
 │   ├── checkout/
 │   │   ├── BikeDetails.tsx
@@ -623,7 +839,7 @@ src/
 │   ├── public/
 │   │   ├── EventPage.tsx      # Landing prenotazione
 │   │   ├── TokenPage.tsx      # Visualizza QR
-│   │   └── WalletPass.tsx     # Redirect Google Wallet
+│   │   └── WalletPass.tsx     # Redirect Google/Apple Wallet
 │   └── operator/
 │       ├── LoginPage.tsx
 │       ├── DashboardPage.tsx
@@ -640,6 +856,42 @@ src/
     └── mantineTheme.ts
 ```
 
+**Esempio React Token Type (Walk-in):**
+
+```tsx
+const CheckinWalkin = () => {
+  const [tokenType, setTokenType] = useState<'digital'|'physical'>('digital');
+  
+  return (
+    <Radio.Group value={tokenType} onChange={setTokenType}>
+      <Radio value="digital" label="🎫 Token Digitale (NO foto)" />
+      <Radio value="physical" label="📵 Token Fisico (FOTO obbligatoria)" />
+      {tokenType === 'physical' && <PhotoCapture required />}
+    </Radio.Group>
+  );
+};
+```
+
+---
+
+## 🔌 Hook PocketBase (pb_hooks/checkin.js)
+
+```js
+// Auto-assegna slot + valida foto fisici
+onRecordAfterCreateRequest((e) => {
+  if (e.collection.name === 'tokens' && e.record.get('status') === 'checked_in') {
+    if (e.record.get('token_type') === 'physical' && !e.record.get('photo_url')) {
+      throw new BadRequestError('Foto obbligatoria per token fisici');
+    }
+    
+    // Decrementa slots available evento
+    const event = await $app.dao().findRecordById('events', e.record.get('event'));
+    event.set('slots_available', event.get('slots_available') - 1);
+    await event.save();
+  }
+});
+```
+
 ---
 
 ## 📦 Output Richiesti
@@ -650,8 +902,8 @@ src/
 4. **Backend FastAPI:**
    - Modelli SQLAlchemy
    - Endpoint check-in/check-out/prenotazione
-   - Integrazione Twilio SMS/WhatsApp
-   - Generazione Google Wallet pass
+   - Integrazione Twilio SMS/WhatsApp (in valutazione)
+   - Generazione Google Wallet e Apple Wallet pass
    - Validazione Pydantic
 5. **Frontend React + Mantine:**
    - Setup progetto Vite
@@ -666,12 +918,38 @@ src/
 ## ⚙️ Note Implementative
 
 - **UI Library**: Mantine 7+ (NO Tailwind)
-- **Validazione telefono**: `libphonenumber-js` formato E.164
+- **Validazione email**: formato standard email (obbligatoria)
+- **Validazione telefono**: `libphonenumber-js` formato E.164 (opzionale, se fornito)
 - **Rate limiting**: protezione endpoint pubblici `/reserve` e `/send-ticket`
 - **Token format**: `DOT-XXXX` (prefisso Dottò + 4 caratteri alfanumerici, esclusi 0/O, 1/I/L per leggibilità)
 - **QR URL**: sempre `https://dotto.bike/t/{token_code}`
 - **Progetto**: Dottò by [Scintilla Cicloprogetti](https://www.scintillacicloprogetti.it/)
 - **Compressione foto**: client-side prima upload (max 800px, 80% quality)
 - **Timeout prenotazioni**: configurabile per evento, default fine evento
+- **Wallet integration**: Supporto Google Wallet (Android) e Apple Wallet (iOS) per aggiunta pass QR
+- **Gestione slot chiusi**: Operatore può chiudere manualmente slot della rastrelliera per bici cargo, slot danneggiati, o bici parcheggiate male. Slot chiusi non vengono assegnati automaticamente
+- **Check-out semplificato**: Verifica solo prenotazione. Identificazione bici/posto richiesta solo se prenotazione persa (fallback)
+- **Verifica bici (anche in fallback)**: solo **posizione** (rastrelliera + slot). Niente foto: il cliente **descrive la bici** all'operatore, che verifica visivamente in loco prima di confermare
+- **Newsletter**: checkbox opzionale (opt-in) in prenotazione e walk-in
+- **Walk-in**: Termine per check-in in loco senza prenotazione pre-evento
+
+---
+
+## 🚀 Deploy (Stack 100% Gratuito)
+
+**Hetzner CX23** (€3.49/mese) + **Docker Compose** + **Brevo** (email + WhatsApp).
+
+**Costo Totale**: €42/anno VPS + 0€ software. Foto storage PocketBase usa ~1MB/token fisico.
+
+---
+
+## ✅ Vantaggi Simplificazione
+
+- **Token digitali (95% casi)**: Check-in <15s (solo scanner QR)
+- **Token fisici (5% casi)**: Foto obbligatoria per tracciamento visivo
+- **No modalità veloce**: Sempre standard, UX prevedibile
+- **Verifica check-out**: Posizione + descrizione cliente (operatore verifica in loco); foto solo per token fisici se utile in fallback
+
+**Tempo implementativo**: -1h (no toggle veloce). MVP completo **18h**.
 
 

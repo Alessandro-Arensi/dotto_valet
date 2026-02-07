@@ -1,7 +1,6 @@
 """
 Dottò - SMS Service (Twilio)
 """
-from typing import Optional
 
 from app.config import get_settings
 
@@ -16,18 +15,18 @@ async def send_sms(to: str, message: str) -> bool:
     if not settings.twilio_account_sid or not settings.twilio_auth_token:
         print(f"[SMS] Twilio not configured. Would send to {to}: {message}")
         return False
-    
+
     try:
         from twilio.rest import Client
-        
+
         client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
-        
+
         message = client.messages.create(
             body=message,
             from_=settings.twilio_phone_number,
             to=to,
         )
-        
+
         print(f"[SMS] Sent to {to}, SID: {message.sid}")
         return True
     except Exception as e:
@@ -87,5 +86,3 @@ Token: {token_code}
 Mostra questo QR per ritirare la tua bici.
 """
     return await send_sms(phone, message)
-
-

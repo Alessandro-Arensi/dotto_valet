@@ -1,7 +1,7 @@
 """
 Dottò - Tokens API
 """
-from typing import Optional
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,10 +11,14 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.database import get_db
-from app.models.token import Token
 from app.models.checkin import Checkin
-from app.models.event import Event
-from app.schemas.token import TokenInfo, TokenBasicInfo, TokenEventInfo, TokenCheckinInfo
+from app.models.token import Token
+from app.schemas.token import (
+    TokenBasicInfo,
+    TokenCheckinInfo,
+    TokenEventInfo,
+    TokenInfo,
+)
 from app.services.token_service import normalize_phone
 
 settings = get_settings()
@@ -38,10 +42,10 @@ async def get_token_info(
         .where(Token.code == code.upper())
     )
     token = result.scalar_one_or_none()
-    
+
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
-    
+
     # Event info
     event_info = None
     if token.event:
@@ -50,7 +54,7 @@ async def get_token_info(
             location=token.event.location,
             date=token.event.start_date,
         )
-    
+
     # Checkin info
     checkin_info = None
     if token.checkin:
@@ -58,13 +62,13 @@ async def get_token_info(
         if token.checkin.rack.label:
             position = token.checkin.rack.label
         position += f", Slot {token.checkin.slot_number}"
-        
+
         checkin_info = TokenCheckinInfo(
             position=position,
             checked_in_at=token.checkin.checked_in_at,
             photo_url=token.checkin.bike_photo_url,
         )
-    
+
     return TokenInfo(
         token=TokenBasicInfo(
             code=token.code,
@@ -79,7 +83,7 @@ async def get_token_info(
 @router.get("/recover")
 async def recover_token(
     phone: str = Query(..., description="Customer phone number"),
-    event_id: Optional[UUID] = Query(None, description="Event ID (optional)"),
+    event_id: UUID | None = Query(None, description="Event ID (optional)"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -87,7 +91,7 @@ async def recover_token(
     Used when customer loses QR code.
     """
     phone_normalized = normalize_phone(phone)
-    
+
     # Build query
     query = (
         select(Token)
@@ -99,19 +103,18 @@ async def recover_token(
             Token.status.in_(["reserved", "checked_in"]),
         )
     )
-    
+
     if event_id:
         query = query.where(Token.event_id == event_id)
-    
+
     result = await db.execute(query)
     tokens = result.scalars().all()
-    
+
     if not tokens:
         raise HTTPException(
-            status_code=404,
-            detail="No active token found for this phone number"
+            status_code=404, detail="No active token found for this phone number"
         )
-    
+
     # Return all active tokens (usually just one)
     return {
         "success": True,
@@ -124,7 +127,11 @@ async def recover_token(
             }
             for t in tokens
         ],
-        "message": "QR reinviato via SMS" if len(tokens) == 1 else f"Trovati {len(tokens)} token attivi",
+        "message": (
+            "QR reinviato via SMS"
+            if len(tokens) == 1
+            else f"Trovati {len(tokens)} token attivi"
+        ),
     }
 
 
@@ -137,23 +144,25 @@ async def get_wallet_pass(
     Get Google Wallet pass URL for a token.
     """
     from app.services.wallet import generate_wallet_pass_url, get_wallet_instructions
-    
+
     result = await db.execute(
         select(Token)
         .options(selectinload(Token.event))
         .where(Token.code == code.upper())
     )
     token = result.scalar_one_or_none()
-    
+
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
-    
+
     if not token.event:
-        raise HTTPException(status_code=400, detail="Token not associated with an event")
-    
+        raise HTTPException(
+            status_code=400, detail="Token not associated with an event"
+        )
+
     qr_url = f"{settings.app_url}/t/{token.code}"
     event_date = token.event.start_date.strftime("%d/%m/%Y")
-    
+
     wallet_url = await generate_wallet_pass_url(
         token_code=token.code,
         event_name=token.event.name,
@@ -161,7 +170,7 @@ async def get_wallet_pass(
         event_date=event_date,
         qr_url=qr_url,
     )
-    
+
     if wallet_url:
         return {
             "success": True,
@@ -173,4 +182,3 @@ async def get_wallet_pass(
             "message": "Google Wallet integration not configured",
             "setup": get_wallet_instructions(),
         }
-

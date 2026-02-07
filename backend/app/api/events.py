@@ -1,32 +1,34 @@
 """
 Dottò - Events API
 """
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.event import Event
-from app.models.token import Token
 from app.models.checkin import Checkin
-from app.models.rack import Rack
+from app.models.event import Event
 from app.models.operator import Operator
+from app.models.rack import Rack
+from app.models.token import Token
 from app.schemas.event import (
-    EventCreate, EventRead, EventStats, EventAvailability,
-    EventPublicInfo, AvailabilityInfo
+    AvailabilityInfo,
+    EventAvailability,
+    EventPublicInfo,
+    EventRead,
+    EventStats,
 )
 from app.services.auth import get_current_operator
 
 router = APIRouter()
 
 
-@router.get("", response_model=List[EventRead])
+@router.get("", response_model=list[EventRead])
 async def list_events(
     active_only: bool = True,
     operator: Operator = Depends(get_current_operator),
@@ -35,8 +37,8 @@ async def list_events(
     """List all events (requires authentication)."""
     query = select(Event).order_by(Event.start_date.desc())
     if active_only:
-        query = query.where(Event.is_active == True)
-    
+        query = query.where(Event.is_active)
+
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -48,9 +50,7 @@ async def get_event(
     db: AsyncSession = Depends(get_db),
 ):
     """Get event by ID."""
-    result = await db.execute(
-        select(Event).where(Event.id == event_id)
-    )
+    result = await db.execute(select(Event).where(Event.id == event_id))
     event = result.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -65,26 +65,26 @@ async def get_event_stats(
 ):
     """Get real-time event statistics."""
     # Get event
-    result = await db.execute(
-        select(Event).where(Event.id == event_id)
-    )
+    result = await db.execute(select(Event).where(Event.id == event_id))
     event = result.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    
+
     # Count tokens by status
     token_counts = await db.execute(
         select(
             func.count(Token.id).filter(Token.status == "reserved").label("reserved"),
-            func.count(Token.id).filter(Token.status == "checked_in").label("checked_in"),
+            func.count(Token.id)
+            .filter(Token.status == "checked_in")
+            .label("checked_in"),
         ).where(Token.event_id == event_id)
     )
     counts = token_counts.one()
     reserved = counts.reserved or 0
     checked_in = counts.checked_in or 0
-    
+
     # Count checkins in last 5 minutes
-    five_min_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+    five_min_ago = datetime.now(UTC) - timedelta(minutes=5)
     recent_result = await db.execute(
         select(func.count(Checkin.id)).where(
             Checkin.event_id == event_id,
@@ -92,11 +92,13 @@ async def get_event_stats(
         )
     )
     checkins_last_5min = recent_result.scalar() or 0
-    
+
     occupied = reserved + checked_in
     available = max(0, event.total_capacity - occupied)
-    occupancy_percent = (occupied / event.total_capacity * 100) if event.total_capacity > 0 else 0
-    
+    occupancy_percent = (
+        (occupied / event.total_capacity * 100) if event.total_capacity > 0 else 0
+    )
+
     return EventStats(
         event_id=event_id,
         total_capacity=event.total_capacity,
@@ -121,10 +123,10 @@ async def get_next_available_slot(
         select(Rack).where(Rack.event_id == event_id).order_by(Rack.rack_number)
     )
     racks = result.scalars().all()
-    
+
     if not racks:
         raise HTTPException(status_code=404, detail="No racks found for this event")
-    
+
     # Find first available slot
     for rack in racks:
         # Get occupied slots for this rack
@@ -135,7 +137,7 @@ async def get_next_available_slot(
             )
         )
         occupied_slots = {row[0] for row in occupied_result.all()}
-        
+
         # Find first free slot
         for slot in range(1, rack.slots + 1):
             if slot not in occupied_slots:
@@ -145,7 +147,7 @@ async def get_next_available_slot(
                     "slot_number": slot,
                     "rack_label": rack.label,
                 }
-    
+
     raise HTTPException(status_code=404, detail="No available slots")
 
 
@@ -156,13 +158,11 @@ async def get_event_availability(
     db: AsyncSession = Depends(get_db),
 ):
     """Get public availability info for an event (by slug)."""
-    result = await db.execute(
-        select(Event).where(Event.slug == slug, Event.is_active == True)
-    )
+    result = await db.execute(select(Event).where(Event.slug == slug, Event.is_active))
     event = result.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    
+
     # Count occupied tokens
     token_result = await db.execute(
         select(func.count(Token.id)).where(
@@ -173,17 +173,19 @@ async def get_event_availability(
     occupied = token_result.scalar() or 0
     available = max(0, event.total_capacity - occupied)
     percent = (occupied / event.total_capacity * 100) if event.total_capacity > 0 else 0
-    
+
     # Check if can reserve
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     can_reserve = available > 0 and (not event.end_date or event.end_date > now)
-    
+
     message = None
     if available == 0:
         message = "Sold out"
     elif event.checkin_opens_at and event.checkin_opens_at > now:
-        message = f"Check-in apre il {event.checkin_opens_at.strftime('%d/%m alle %H:%M')}"
-    
+        message = (
+            f"Check-in apre il {event.checkin_opens_at.strftime('%d/%m alle %H:%M')}"
+        )
+
     return EventAvailability(
         event=EventPublicInfo(
             name=event.name,
@@ -206,7 +208,7 @@ async def get_event_availability(
 # Public reservation endpoint
 class ReservationRequest(BaseModel):
     phone: str
-    email: Optional[str] = None
+    email: str | None = None
     newsletter_opt_in: bool = False
 
 
@@ -227,21 +229,20 @@ async def create_reservation(
     Create a public reservation for an event.
     No authentication required.
     """
-    from app.services.token_service import (
-        get_unique_token_code, get_or_create_customer, normalize_phone
-    )
     from app.config import get_settings
-    
-    settings = get_settings()
-    
-    # Find event
-    result = await db.execute(
-        select(Event).where(Event.slug == slug, Event.is_active == True)
+    from app.services.token_service import (
+        get_or_create_customer,
+        get_unique_token_code,
     )
+
+    settings = get_settings()
+
+    # Find event
+    result = await db.execute(select(Event).where(Event.slug == slug, Event.is_active))
     event = result.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    
+
     # Check availability
     token_result = await db.execute(
         select(func.count(Token.id)).where(
@@ -252,7 +253,7 @@ async def create_reservation(
     occupied = token_result.scalar() or 0
     if occupied >= event.total_capacity:
         raise HTTPException(status_code=400, detail="Event is sold out")
-    
+
     # Get or create customer
     customer = await get_or_create_customer(
         db,
@@ -260,7 +261,7 @@ async def create_reservation(
         email=data.email,
         newsletter_opt_in=data.newsletter_opt_in,
     )
-    
+
     # Check if customer already has a reservation for this event
     existing = await db.execute(
         select(Token).where(
@@ -271,10 +272,9 @@ async def create_reservation(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(
-            status_code=400,
-            detail="You already have a reservation for this event"
+            status_code=400, detail="You already have a reservation for this event"
         )
-    
+
     # Create token
     code = await get_unique_token_code(db)
     token = Token(
@@ -283,15 +283,15 @@ async def create_reservation(
         status="reserved",
         event_id=event.id,
         customer_id=customer.id,
-        reserved_at=datetime.now(timezone.utc),
+        reserved_at=datetime.now(UTC),
         expires_at=event.end_date,
     )
     db.add(token)
     await db.flush()
-    
+
     # TODO: Send SMS via Twilio
     message_sent = False
-    
+
     return ReservationResponse(
         success=True,
         token={
@@ -301,8 +301,9 @@ async def create_reservation(
         },
         reservation={
             "expires_at": event.end_date.isoformat() if event.end_date else None,
-            "checkin_opens_at": event.checkin_opens_at.isoformat() if event.checkin_opens_at else None,
+            "checkin_opens_at": (
+                event.checkin_opens_at.isoformat() if event.checkin_opens_at else None
+            ),
         },
         message_sent=message_sent,
     )
-

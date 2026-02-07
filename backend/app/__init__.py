@@ -1,5 +1,3 @@
 """
 Dottò - Backend Application
 """
-
-

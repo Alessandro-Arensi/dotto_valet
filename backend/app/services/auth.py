@@ -1,12 +1,12 @@
 """
 Dottò - Authentication Service
 """
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -31,32 +31,38 @@ def hash_pin(pin: str) -> str:
     return pwd_context.hash(pin)
 
 
-def create_access_token(operator_id: UUID, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    operator_id: UUID, expires_delta: timedelta | None = None
+) -> str:
     """Create a JWT access token."""
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    
+        expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)
+
     to_encode = {
         "sub": str(operator_id),
         "exp": expire,
         "type": "access",
     }
-    return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
+    )
 
 
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT token."""
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
+        )
         return payload
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 async def get_current_operator(
@@ -66,27 +72,27 @@ async def get_current_operator(
     """Get the current authenticated operator."""
     payload = decode_token(credentials.credentials)
     operator_id = payload.get("sub")
-    
+
     if not operator_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
-    
+
     result = await db.execute(
         select(Operator).where(
             Operator.id == UUID(operator_id),
-            Operator.is_active == True,
+            Operator.is_active,
         )
     )
     operator = result.scalar_one_or_none()
-    
+
     if not operator:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Operator not found or inactive",
         )
-    
+
     return operator
 
 
@@ -100,5 +106,3 @@ async def get_current_admin(
             detail="Admin privileges required",
         )
     return operator
-
-

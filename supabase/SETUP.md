@@ -49,8 +49,8 @@ USING (bucket_id = 'bike-photos');
 1. Vai su **Settings** > **API**
 2. Copia:
    - **Project URL**: `https://xxxxx.supabase.co`
-   - **anon/public key**: per il frontend
-   - **service_role key**: per il backend (SEGRETA!)
+   - **Publishable key** (`sb_publishable_...`): per il frontend
+   - **Secret key** (`sb_secret_...`): per il backend (SEGRETA!)
 
 3. Vai su **Settings** > **Database**
 4. Copia:

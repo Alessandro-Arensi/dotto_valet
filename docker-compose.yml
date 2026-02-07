@@ -1,10 +1,25 @@
 version: "3.8"
 
 # Dottò - Development Stack
-# Use this for local development when NOT using Supabase cloud
+# PocketBase è il backend principale; db+backend restano per sviluppo parallelo fino a migrazione completa
 
 services:
-  # PostgreSQL Database
+  # PocketBase (backend unico target)
+  pocketbase:
+    build:
+      context: ./pocketbase
+      dockerfile: Dockerfile
+    image: dotto-pocketbase:latest
+    ports:
+      - "8090:8090"
+    volumes:
+      - pocketbase_data:/pb_data
+      - ./pocketbase/pb_migrations:/pb_migrations
+      - ./pocketbase/pb_hooks:/pb_hooks
+    environment:
+      - POCKETBASE_DEBUG=true
+
+  # PostgreSQL Database (legacy - da rimuovere dopo migrazione)
   db:
     image: postgres:15-alpine
     environment:
@@ -32,8 +47,8 @@ services:
     environment:
       DATABASE_URL: postgresql://dotto:dotto_dev@db:5432/dotto
       SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
       JWT_SECRET_KEY: dev-secret-key-change-in-production
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
       ENVIRONMENT: development
@@ -61,6 +76,7 @@ services:
       - backend
 
 volumes:
+  pocketbase_data:
   postgres_data:
   frontend_node_modules:
 

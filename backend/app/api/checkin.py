@@ -1,28 +1,36 @@
 """
 Dottò - Check-in/out API
 """
-from datetime import datetime, timezone
-from typing import Optional
+
+from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.event import Event
-from app.models.token import Token
 from app.models.checkin import Checkin
-from app.models.rack import Rack
+from app.models.event import Event
 from app.models.operator import Operator
+from app.models.rack import Rack
+from app.models.token import Token
 from app.schemas.checkin import (
-    CheckinCreate, CheckinResponse, CheckinTokenInfo, CheckinPositionInfo, 
-    CheckinCustomerInfo, CheckoutRequest, CheckoutResponse, CheckoutCheckinInfo
+    CheckinCreate,
+    CheckinCustomerInfo,
+    CheckinPositionInfo,
+    CheckinResponse,
+    CheckinTokenInfo,
+    CheckoutCheckinInfo,
+    CheckoutRequest,
+    CheckoutResponse,
 )
 from app.services.auth import get_current_operator
 from app.services.token_service import (
-    get_unique_token_code, get_or_create_customer, mask_phone
+    get_or_create_customer,
+    get_unique_token_code,
+    mask_phone,
 )
 
 router = APIRouter()
@@ -36,23 +44,22 @@ async def create_checkin(
 ):
     """
     Check-in a bike.
-    
+
     Supports:
     - Existing token (from reservation or physical token)
     - Creating new digital token on the spot
     """
     warnings = []
-    token: Optional[Token] = None
-    
+    token: Token | None = None
+
     # Find or create token
     if data.create_token:
         # Create new digital token
         if not data.customer_phone:
             raise HTTPException(
-                status_code=400,
-                detail="Phone number required for new digital token"
+                status_code=400, detail="Phone number required for new digital token"
             )
-        
+
         # Get customer
         customer = await get_or_create_customer(
             db,
@@ -60,7 +67,7 @@ async def create_checkin(
             email=data.customer_email,
             newsletter_opt_in=data.newsletter_opt_in,
         )
-        
+
         # Check for existing active token for this customer
         existing = await db.execute(
             select(Token).where(
@@ -70,18 +77,15 @@ async def create_checkin(
         )
         if existing.scalar_one_or_none():
             raise HTTPException(
-                status_code=400,
-                detail="Customer already has an active token"
+                status_code=400, detail="Customer already has an active token"
             )
-        
+
         # Get active event (for now, get the first active one)
-        event_result = await db.execute(
-            select(Event).where(Event.is_active == True).limit(1)
-        )
+        event_result = await db.execute(select(Event).where(Event.is_active).limit(1))
         event = event_result.scalar_one_or_none()
         if not event:
             raise HTTPException(status_code=400, detail="No active event")
-        
+
         # Create token
         code = await get_unique_token_code(db)
         token = Token(
@@ -90,11 +94,11 @@ async def create_checkin(
             status="checked_in",
             event_id=event.id,
             customer_id=customer.id,
-            reserved_at=datetime.now(timezone.utc),
+            reserved_at=datetime.now(UTC),
         )
         db.add(token)
         await db.flush()
-        
+
     else:
         # Find existing token
         result = await db.execute(
@@ -103,40 +107,41 @@ async def create_checkin(
             .where(Token.code == data.token_code.upper())
         )
         token = result.scalar_one_or_none()
-        
+
         if not token:
             raise HTTPException(status_code=404, detail="Token not found")
-        
+
         if token.status == "checked_in":
             raise HTTPException(status_code=400, detail="Token already checked in")
-        
+
         if token.status not in ["reserved", "available"]:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Token cannot be checked in (status: {token.status})"
+                status_code=400,
+                detail=f"Token cannot be checked in (status: {token.status})",
             )
-    
+
     # Validate physical token photo requirement
     if data.physical_token or token.type == "physical":
         if not data.bike_photo_base64:
             raise HTTPException(
-                status_code=400,
-                detail="Photo required for physical tokens"
+                status_code=400, detail="Photo required for physical tokens"
             )
         token.type = "physical"
-    
+
     # Get position
-    rack: Optional[Rack] = None
+    rack: Rack | None = None
     slot_number: int
     auto_assigned = False
-    
+
     if data.auto_position:
         # Auto-assign position
         racks_result = await db.execute(
-            select(Rack).where(Rack.event_id == token.event_id).order_by(Rack.rack_number)
+            select(Rack)
+            .where(Rack.event_id == token.event_id)
+            .order_by(Rack.rack_number)
         )
         racks = racks_result.scalars().all()
-        
+
         for r in racks:
             occupied_result = await db.execute(
                 select(Checkin.slot_number).where(
@@ -145,7 +150,7 @@ async def create_checkin(
                 )
             )
             occupied_slots = {row[0] for row in occupied_result.all()}
-            
+
             for s in range(1, r.slots + 1):
                 if s not in occupied_slots:
                     rack = r
@@ -154,7 +159,7 @@ async def create_checkin(
                     break
             if rack:
                 break
-        
+
         if not rack:
             raise HTTPException(status_code=400, detail="No available slots")
     else:
@@ -162,16 +167,14 @@ async def create_checkin(
         if not data.rack_id or not data.slot_number:
             raise HTTPException(
                 status_code=400,
-                detail="Rack and slot required when auto_position is false"
+                detail="Rack and slot required when auto_position is false",
             )
-        
-        rack_result = await db.execute(
-            select(Rack).where(Rack.id == data.rack_id)
-        )
+
+        rack_result = await db.execute(select(Rack).where(Rack.id == data.rack_id))
         rack = rack_result.scalar_one_or_none()
         if not rack:
             raise HTTPException(status_code=404, detail="Rack not found")
-        
+
         # Check slot availability
         occupied = await db.execute(
             select(Checkin).where(
@@ -182,16 +185,16 @@ async def create_checkin(
         )
         if occupied.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Slot is occupied")
-        
+
         slot_number = data.slot_number
-    
+
     # Handle photo upload (placeholder - will be implemented with Supabase Storage)
     bike_photo_url = None
     if data.bike_photo_base64:
         # TODO: Upload to Supabase Storage
         bike_photo_url = f"https://placeholder.com/photos/{token.code}.jpg"
         warnings.append("Photo upload not yet implemented")
-    
+
     # Create checkin
     checkin = Checkin(
         token_id=token.id,
@@ -203,19 +206,19 @@ async def create_checkin(
         checked_in_by=operator.id,
     )
     db.add(checkin)
-    
+
     # Update token status
     token.status = "checked_in"
-    
+
     await db.flush()
-    
+
     # Prepare response
     customer_info = None
     if token.customer:
         customer_info = CheckinCustomerInfo(
             phone_masked=mask_phone(token.customer.phone_normalized)
         )
-    
+
     return CheckinResponse(
         success=True,
         checkin_id=checkin.id,
@@ -249,43 +252,42 @@ async def create_checkout(
         .where(Token.code == data.token_code.upper())
     )
     token = result.scalar_one_or_none()
-    
+
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
-    
+
     if token.status != "checked_in":
         raise HTTPException(
-            status_code=400,
-            detail=f"Token is not checked in (status: {token.status})"
+            status_code=400, detail=f"Token is not checked in (status: {token.status})"
         )
-    
+
     if not token.checkin:
         raise HTTPException(status_code=400, detail="No checkin record found")
-    
+
     checkin = token.checkin
-    
+
     # Update checkin
-    checkin.checked_out_at = datetime.now(timezone.utc)
+    checkin.checked_out_at = datetime.now(UTC)
     checkin.checked_out_by = operator.id
-    
+
     # Update token status
     if token.type == "physical":
         token.status = "available"  # Physical tokens can be reused
     else:
         token.status = "checked_out"
-    
+
     # Prepare response
     position = f"Rastrelliera {checkin.rack.rack_number}"
     if checkin.rack.label:
         position = f"{checkin.rack.label}"
     position += f", Slot {checkin.slot_number}"
-    
+
     customer_info = None
     if token.customer:
         customer_info = CheckinCustomerInfo(
             phone_masked=mask_phone(token.customer.phone_normalized)
         )
-    
+
     return CheckoutResponse(
         success=True,
         checkin=CheckoutCheckinInfo(
@@ -315,13 +317,13 @@ async def list_checkins(
         .where(Checkin.event_id == event_id)
         .order_by(Checkin.checked_in_at.desc())
     )
-    
+
     if status == "active":
         query = query.where(Checkin.checked_out_at.is_(None))
-    
+
     result = await db.execute(query)
     checkins = result.scalars().all()
-    
+
     return [
         {
             "id": c.id,
@@ -333,9 +335,11 @@ async def list_checkins(
             "checked_in_at": c.checked_in_at,
             "checked_out_at": c.checked_out_at,
             "bike_photo_url": c.bike_photo_url,
-            "customer_phone": mask_phone(c.token.customer.phone_normalized) if c.token.customer else None,
+            "customer_phone": (
+                mask_phone(c.token.customer.phone_normalized)
+                if c.token.customer
+                else None
+            ),
         }
         for c in checkins
     ]
-
-

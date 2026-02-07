@@ -3,12 +3,14 @@ Dottò - FastAPI Application
 Sistema Valet Biciclette per Eventi
 by Scintilla Cicloprogetti
 """
+
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import auth, checkin, events, tokens
 from app.config import get_settings
-from app.api import auth, events, checkin, tokens
 
 settings = get_settings()
 
@@ -64,5 +66,3 @@ async def root():
 async def health():
     """Health check endpoint."""
     return {"status": "healthy"}
-
-

@@ -8,9 +8,8 @@ Requires Google Cloud setup:
 3. Create a Service Account with Wallet permissions
 4. Download the service account JSON key
 """
+
 import json
-from typing import Optional
-from uuid import uuid4
 
 from app.config import get_settings
 
@@ -20,13 +19,13 @@ settings = get_settings()
 async def generate_wallet_pass_url(
     token_code: str,
     event_name: str,
-    event_location: Optional[str],
+    event_location: str | None,
     event_date: str,
     qr_url: str,
-) -> Optional[str]:
+) -> str | None:
     """
     Generate a Google Wallet pass URL.
-    
+
     Returns a URL that users can click to add the pass to their Google Wallet.
     """
     try:
@@ -36,10 +35,10 @@ async def generate_wallet_pass_url(
         # 2. Creating a Pass Class (one per event type)
         # 3. Creating a Pass Object (one per ticket)
         # 4. Generating a JWT signed with service account
-        
+
         # For now, return a placeholder URL
         # In production, this would generate a real Google Wallet JWT
-        
+
         pass_data = {
             "iss": "dotto-wallet-issuer",
             "aud": "google",
@@ -54,25 +53,19 @@ async def generate_wallet_pass_url(
                         "header": {
                             "defaultValue": {
                                 "language": "it",
-                                "value": "Dottò - Valet Bici"
+                                "value": "Dottò - Valet Bici",
                             }
                         },
                         "subheader": {
-                            "defaultValue": {
-                                "language": "it",
-                                "value": event_name
-                            }
+                            "defaultValue": {"language": "it", "value": event_name}
                         },
                         "cardTitle": {
-                            "defaultValue": {
-                                "language": "it",
-                                "value": token_code
-                            }
+                            "defaultValue": {"language": "it", "value": token_code}
                         },
                         "barcode": {
                             "type": "QR_CODE",
                             "value": qr_url,
-                            "alternateText": token_code
+                            "alternateText": token_code,
                         },
                         "textModulesData": [
                             {
@@ -86,27 +79,25 @@ async def generate_wallet_pass_url(
                             {
                                 "header": "Data",
                                 "body": event_date,
-                            }
+                            },
                         ],
                         "hexBackgroundColor": "#228be6",
-                        "logo": {
-                            "sourceUri": {
-                                "uri": f"{settings.app_url}/logo.png"
-                            }
-                        }
+                        "logo": {"sourceUri": {"uri": f"{settings.app_url}/logo.png"}},
                     }
                 ]
-            }
+            },
         }
-        
+
         # In production, sign this JWT with Google service account
         # and return: https://pay.google.com/gp/v/save/{JWT}
-        
+
         # For now, return a placeholder
-        print(f"[Wallet] Would generate pass for {token_code}: {json.dumps(pass_data, indent=2)}")
-        
+        print(
+            f"[Wallet] Would generate pass for {token_code}: {json.dumps(pass_data, indent=2)}"
+        )
+
         return None  # Return None until Google Wallet is configured
-        
+
     except Exception as e:
         print(f"[Wallet] Failed to generate pass: {e}")
         return None
@@ -128,5 +119,3 @@ def get_wallet_instructions() -> dict:
         ],
         "documentation": "https://developers.google.com/wallet/generic",
     }
-
-
