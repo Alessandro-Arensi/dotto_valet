@@ -35,6 +35,7 @@ dependencies = [
     "httpx>=0.24,<0.26",
     "supabase==2.3.4",
     "twilio==8.10.3",
+    "brevo-python>=1.1.2",
     "Pillow==10.2.0",
     "qrcode[pil]==7.4.2",
     "python-dotenv==1.0.0",
@@ -46,6 +47,7 @@ dev = [
     "ruff>=0.8.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=4.1.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -107,9 +109,19 @@ venvPath = "."
 venv = ".venv"
 pythonVersion = "3.11"
 
-# --- Pytest (opzionale) ---
+# --- Pytest ---
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short"
+
+# --- Coverage (usato con make test-coverage) ---
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "def __repr__", "raise NotImplementedError"]
+show_missing = true

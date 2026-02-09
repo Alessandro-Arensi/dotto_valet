@@ -1,7 +1,7 @@
 # Dottò - Makefile
 # Development: lavorare su branch develop. Release: merge su main e build artifact prod.
 
-.PHONY: help build up down reload restart logs test test-backend test-frontend venv install-deps format lint lint-fix release clean
+.PHONY: help build up down reload restart logs test test-backend test-frontend test-coverage venv install-deps format lint lint-fix release clean
 
 # Default (questo progetto richiede solo Python 3.11 nel venv)
 DOCKER_COMPOSE := docker-compose
@@ -22,6 +22,7 @@ help:
 	@echo "  make test          - Esegue test backend + frontend"
 	@echo "  make test-backend  - Test Python (pytest in backend)"
 	@echo "  make test-frontend - Lint/test frontend (npm)"
+	@echo "  make test-coverage - Test backend con report coverage (richiede make venv)"
 	@echo "  make venv          - Crea .venv e installa dipendenze Python (pyproject.toml)"
 	@echo "  make install-deps  - Solo installa dipendenze in .venv (venv già esistente)"
 	@echo "  make format        - Formatta il codice con black"
@@ -75,9 +76,17 @@ test: test-backend test-frontend
 
 test-backend:
 	@if [ -d "$(VENV_DIR)" ]; then \
-		. $(VENV_DIR)/bin/activate && cd backend && python -m pytest -q 2>/dev/null || echo "Backend: nessun test configurato (aggiungi pytest)."; \
+		. $(VENV_DIR)/bin/activate && cd backend && python -m pytest tests -v --tb=short; \
 	else \
 		echo "Backend: salta (nessun .venv — esegui 'make venv' per i test Python)."; \
+		exit 1; \
+	fi
+
+test-coverage:
+	@if [ -d "$(VENV_DIR)" ]; then \
+		. $(VENV_DIR)/bin/activate && cd backend && python -m pytest tests --cov=app --cov-report=term-missing --cov-report=html:htmlcov --cov-fail-under=0 -v --tb=short; \
+	else \
+		echo "Esegui prima: make venv"; exit 1; \
 	fi
 
 test-frontend:
@@ -138,6 +147,7 @@ release: lint test build
 clean: down
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down -v 2>/dev/null || true
 	rm -rf $(VENV_DIR)
+	rm -rf backend/htmlcov backend/.coverage
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	@echo "Pulizia completata."

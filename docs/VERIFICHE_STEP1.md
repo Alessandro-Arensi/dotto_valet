@@ -104,4 +104,5 @@ curl -s "http://localhost:8090/api/collections/events/records?filter=(is_active=
 | 6 | Schema collections corretto in Admin UI | Controllo manuale in http://localhost:8090/_/ |
 | 7 | (Opzionale) Evento di test creato e visibile via API | Creare evento in Admin + `curl` con filter |
 
-Se tutte le verifiche passano, lo **Step 1** è considerato completato e si può passare allo **Step 2** (hook PocketBase).
+Se tutte le verifiche passano, lo **Step 1** è considerato completato e si può passare allo **Step 2** (hook PocketBase).  
+→ Vedi [VERIFICHE_STEP2.md](VERIFICHE_STEP2.md).
