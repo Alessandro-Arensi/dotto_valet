@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
 
+    # Brevo Email
+    brevo_api_key: str = ""
+    brevo_sender_email: str = "noreply@dotto.bike"
+    brevo_sender_name: str = "Dottò"
+
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 

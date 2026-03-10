@@ -1,1 +1,1 @@
-# Dottò backend tests – organizzati per modulo (PocketBase collections, hooks, backend base)
+# Dottò backend tests – FastAPI backend (unit/integration)

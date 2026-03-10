@@ -2,7 +2,7 @@
 
 > Un progetto di [Scintilla Cicloprogetti](https://www.scintillacicloprogetti.it/)
 
-**Aggiornamento Tecnologico**: **PocketBase** + **Brevo WhatsApp Business API** (tier gratuito). Hosting su **Hetzner Cloud VPS CX23** (€3.49/mese). **Foto OBBLIGATORIA solo per token fisici**, **zero foto per token digitali** (sempre).
+**Stack attuale**: **FastAPI + PostgreSQL** come backend, **React + Mantine** come frontend, **Brevo** per email (WhatsApp in valutazione). Hosting consigliato su **Hetzner Cloud VPS CX23** (€3.49/mese). **Foto OBBLIGATORIA solo per token fisici**, **zero foto per token digitali** (sempre).
 
 ## 📋 Panoramica del Progetto
 
@@ -48,7 +48,7 @@ Dettaglio: [docs/BRANCHES.md](docs/BRANCHES.md).
 | `make lint` | Lint con **ruff** (solo check). |
 | `make lint-fix` | Lint con ruff e auto-fix + format con ruff. |
 | `make build` | Build immagini Docker. |
-| `make up` | Avvia tutti i servizi (PocketBase, db, backend, frontend). |
+| `make up` | Avvia tutti i servizi (db PostgreSQL, backend FastAPI, frontend). |
 | `make down` | Ferma i container. |
 | `make reload` | down + build + up (ricarica tutto). |
 | `make test` | Esegue test backend (pytest) e frontend (lint/test). |
@@ -284,10 +284,10 @@ Cliente ha perso il gettone:
 
 | Componente | Tecnologia | Uso |
 |------------|------------|-----|
-| **Backend** | **PocketBase** | DB/Auth/API/Realtime/Storage |
+| **Backend** | **FastAPI + PostgreSQL** | API REST + database principale |
 | **Frontend** | React + Mantine | PWA mobile-first |
-| **Email** | **Brevo SMTP** | 300 email/giorno free |
-| **WhatsApp** | **Brevo WhatsApp API** | Notifiche QR gratuite |
+| **Email** | **Brevo SMTP** | 300 email/giorno free (tier gratuito) |
+| **WhatsApp** | **Brevo WhatsApp API** (opzionale) | Notifiche QR (a consumo) |
 | **Hosting** | **Hetzner CX23** | €3.49/mese, 4GB RAM, 40GB NVMe |
 
 ---
@@ -344,34 +344,6 @@ CHECK-IN (Giorno Evento)
 │  📍 Rast. 3, Slot 7                 │
 │  [ ✅ CONFERMA CHECK-IN ]           │
 └─────────────────────────────────────┘
-```
-
----
-
-## 📋 Schema DB PocketBase Aggiornato
-
-```
-tokens
-├── event (relation)
-├── email ★ (unique per evento)
-├── phone (E.164, optional)
-├── token_code "DOT-XXXX"
-├── token_type ("digital"|"physical")  ← NUOVO
-├── status (pending/checked_in/checked_out)
-├── rack_id, slot_num
-├── photo_url (storage)  ← SOLO token fisici
-├── whatsapp_sent (bool)
-```
-
-**Logica foto** (hook PocketBase: validazione foto obbligatoria per token fisici):
-
-```js
-// Hook PocketBase: Validazione foto obbligatoria
-onRecordBeforeCreateRequest((e) => {
-  if (e.record.get('token_type') === 'physical' && !e.record.get('photo_url')) {
-    throw new BadRequestError('Foto bici obbligatoria per token fisici');
-  }
-});
 ```
 
 ---
@@ -874,26 +846,6 @@ const CheckinWalkin = () => {
 
 ---
 
-## 🔌 Hook PocketBase (pb_hooks/checkin.js)
-
-```js
-// Auto-assegna slot + valida foto fisici
-onRecordAfterCreateRequest((e) => {
-  if (e.collection.name === 'tokens' && e.record.get('status') === 'checked_in') {
-    if (e.record.get('token_type') === 'physical' && !e.record.get('photo_url')) {
-      throw new BadRequestError('Foto obbligatoria per token fisici');
-    }
-    
-    // Decrementa slots available evento
-    const event = await $app.dao().findRecordById('events', e.record.get('event'));
-    event.set('slots_available', event.get('slots_available') - 1);
-    await event.save();
-  }
-});
-```
-
----
-
 ## 📦 Output Richiesti
 
 1. **Architettura tecnica completa** — Diagramma componenti frontend + backend + DB
@@ -937,9 +889,9 @@ onRecordAfterCreateRequest((e) => {
 
 ## 🚀 Deploy (Stack 100% Gratuito)
 
-**Hetzner CX23** (€3.49/mese) + **Docker Compose** + **Brevo** (email + WhatsApp).
+**Hetzner CX23** (€3.49/mese) + **Docker Compose** + **Brevo** (email + WhatsApp opzionale).
 
-**Costo Totale**: €42/anno VPS + 0€ software. Foto storage PocketBase usa ~1MB/token fisico.
+**Costo Totale**: €42/anno VPS + 0€ software. Foto storage (per token fisici) stimata ~1MB/token con compressione lato client.
 
 ---
 

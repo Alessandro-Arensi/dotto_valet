@@ -230,6 +230,7 @@ async def create_reservation(
     No authentication required.
     """
     from app.config import get_settings
+    from app.services.email import send_reservation_email
     from app.services.token_service import (
         get_or_create_customer,
         get_unique_token_code,
@@ -289,7 +290,35 @@ async def create_reservation(
     db.add(token)
     await db.flush()
 
-    # TODO: Send SMS via Twilio
+    # Send confirmation email
+    email_sent = False
+    if customer.email:
+        try:
+            # Format event date
+            event_date_str = event.start_date.strftime("%d/%m/%Y alle %H:%M")
+            if event.end_date:
+                event_date_str += f" - {event.end_date.strftime('%d/%m/%Y alle %H:%M')}"
+
+            qr_url = f"{settings.app_url}/t/{token.code}"
+            wallet_url = f"{settings.app_url}/wallet/{token.code}"
+
+            email_sent = await send_reservation_email(
+                to_email=customer.email,
+                to_name=getattr(customer, "name", None),  # Customer.name might not exist
+                token_code=token.code,
+                event_name=event.name,
+                event_location=event.location,
+                event_date=event_date_str,
+                qr_url=qr_url,
+                wallet_url=wallet_url,
+            )
+        except Exception as e:
+            # Log error but don't fail the reservation
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to send reservation email to {customer.email}: {e}")
+
+    # TODO: Send SMS via Twilio (optional, if phone provided)
     message_sent = False
 
     return ReservationResponse(

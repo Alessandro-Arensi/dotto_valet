@@ -1,25 +1,11 @@
 version: "3.8"
 
 # Dottò - Development Stack
-# PocketBase è il backend principale; db+backend restano per sviluppo parallelo fino a migrazione completa
+# Backend principale: FastAPI + PostgreSQL
+# PocketBase rimane opzionale/legacy (vedi directory pocketbase/) e non fa parte dello stack di default.
 
 services:
-  # PocketBase (backend unico target)
-  pocketbase:
-    build:
-      context: ./pocketbase
-      dockerfile: Dockerfile
-    image: dotto-pocketbase:latest
-    ports:
-      - "8090:8090"
-    volumes:
-      - pocketbase_data:/pb_data
-      - ./pocketbase/pb_migrations:/pb_migrations
-      - ./pocketbase/pb_hooks:/pb_hooks
-    environment:
-      - POCKETBASE_DEBUG=true
-
-  # PostgreSQL Database (legacy - da rimuovere dopo migrazione)
+  # PostgreSQL Database
   db:
     image: postgres:15-alpine
     environment:
@@ -76,8 +62,6 @@ services:
       - backend
 
 volumes:
-  pocketbase_data:
   postgres_data:
   frontend_node_modules:
-
 

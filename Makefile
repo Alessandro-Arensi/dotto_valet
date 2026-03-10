@@ -14,7 +14,7 @@ help:
 	clear
 	@echo "Dottò - Target disponibili:"
 	@echo "  make build         - Build immagini Docker (dev)"
-	@echo "  make up            - Avvia tutti i servizi (dev)"
+	@echo "  make up            - Avvia tutti i servizi (FastAPI + PostgreSQL + frontend)"
 	@echo "  make down          - Ferma e rimuove i container"
 	@echo "  make reload        - down + build + up (ricarica tutto)"
 	@echo "  make restart       - Riavvia i servizi (up dopo down)"
@@ -46,10 +46,6 @@ up:
 up-build:
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d --build
 
-# Avvia solo PocketBase (stack minimo per sviluppo frontend/PB)
-up-pocketbase:
-	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) up -d pocketbase
-
 # --- Stop ---
 down:
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) down
@@ -67,9 +63,6 @@ restart: down up
 # --- Logs ---
 logs:
 	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs -f
-
-logs-pocketbase:
-	$(DOCKER_COMPOSE) -f $(COMPOSE_FILE) logs -f pocketbase
 
 # --- Test ---
 test: test-backend test-frontend
