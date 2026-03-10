@@ -100,10 +100,13 @@ async def create_checkin(
         await db.flush()
 
     else:
-        # Find existing token
+        # Find existing token (include checkin/rack per walk-in con posto già assegnato)
         result = await db.execute(
             select(Token)
-            .options(selectinload(Token.customer))
+            .options(
+                selectinload(Token.customer),
+                selectinload(Token.checkin).selectinload(Checkin.rack),
+            )
             .where(Token.code == data.token_code.upper())
         )
         token = result.scalar_one_or_none()
@@ -128,65 +131,74 @@ async def create_checkin(
             )
         token.type = "physical"
 
-    # Get position
+    # Get position: riusa Checkin esistente (walk-in con posto già assegnato) oppure assegna nuovo
     rack: Rack | None = None
     slot_number: int
     auto_assigned = False
+    checkin: Checkin | None = None
 
-    if data.auto_position:
-        # Auto-assign position
-        racks_result = await db.execute(
-            select(Rack)
-            .where(Rack.event_id == token.event_id)
-            .order_by(Rack.rack_number)
-        )
-        racks = racks_result.scalars().all()
+    if not data.create_token and token.checkin:
+        # Token già ha un posto (es. walk-in): aggiorna solo foto/operatore, non creare nuovo Checkin
+        checkin = token.checkin
+        rack = checkin.rack
+        slot_number = checkin.slot_number
+        auto_assigned = checkin.auto_positioned
+    else:
+        # Assegna nuovo posto
+        if data.auto_position:
+            # Auto-assign position
+            racks_result = await db.execute(
+                select(Rack)
+                .where(Rack.event_id == token.event_id)
+                .order_by(Rack.rack_number)
+            )
+            racks = racks_result.scalars().all()
 
-        for r in racks:
-            occupied_result = await db.execute(
-                select(Checkin.slot_number).where(
-                    Checkin.rack_id == r.id,
+            for r in racks:
+                occupied_result = await db.execute(
+                    select(Checkin.slot_number).where(
+                        Checkin.rack_id == r.id,
+                        Checkin.checked_out_at.is_(None),
+                    )
+                )
+                occupied_slots = {row[0] for row in occupied_result.all()}
+
+                for s in range(1, r.slots + 1):
+                    if s not in occupied_slots:
+                        rack = r
+                        slot_number = s
+                        auto_assigned = True
+                        break
+                if rack:
+                    break
+
+            if not rack:
+                raise HTTPException(status_code=400, detail="No available slots")
+        else:
+            # Manual position
+            if not data.rack_id or not data.slot_number:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Rack and slot required when auto_position is false",
+                )
+
+            rack_result = await db.execute(select(Rack).where(Rack.id == data.rack_id))
+            rack = rack_result.scalar_one_or_none()
+            if not rack:
+                raise HTTPException(status_code=404, detail="Rack not found")
+
+            # Check slot availability
+            occupied = await db.execute(
+                select(Checkin).where(
+                    Checkin.rack_id == rack.id,
+                    Checkin.slot_number == data.slot_number,
                     Checkin.checked_out_at.is_(None),
                 )
             )
-            occupied_slots = {row[0] for row in occupied_result.all()}
+            if occupied.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Slot is occupied")
 
-            for s in range(1, r.slots + 1):
-                if s not in occupied_slots:
-                    rack = r
-                    slot_number = s
-                    auto_assigned = True
-                    break
-            if rack:
-                break
-
-        if not rack:
-            raise HTTPException(status_code=400, detail="No available slots")
-    else:
-        # Manual position
-        if not data.rack_id or not data.slot_number:
-            raise HTTPException(
-                status_code=400,
-                detail="Rack and slot required when auto_position is false",
-            )
-
-        rack_result = await db.execute(select(Rack).where(Rack.id == data.rack_id))
-        rack = rack_result.scalar_one_or_none()
-        if not rack:
-            raise HTTPException(status_code=404, detail="Rack not found")
-
-        # Check slot availability
-        occupied = await db.execute(
-            select(Checkin).where(
-                Checkin.rack_id == rack.id,
-                Checkin.slot_number == data.slot_number,
-                Checkin.checked_out_at.is_(None),
-            )
-        )
-        if occupied.scalar_one_or_none():
-            raise HTTPException(status_code=400, detail="Slot is occupied")
-
-        slot_number = data.slot_number
+            slot_number = data.slot_number
 
     # Handle photo upload (placeholder - will be implemented with Supabase Storage)
     bike_photo_url = None
@@ -195,17 +207,23 @@ async def create_checkin(
         bike_photo_url = f"https://placeholder.com/photos/{token.code}.jpg"
         warnings.append("Photo upload not yet implemented")
 
-    # Create checkin
-    checkin = Checkin(
-        token_id=token.id,
-        event_id=token.event_id,
-        rack_id=rack.id,
-        slot_number=slot_number,
-        bike_photo_url=bike_photo_url,
-        auto_positioned=auto_assigned,
-        checked_in_by=operator.id,
-    )
-    db.add(checkin)
+    if checkin is None:
+        # Crea nuovo Checkin
+        checkin = Checkin(
+            token_id=token.id,
+            event_id=token.event_id,
+            rack_id=rack.id,
+            slot_number=slot_number,
+            bike_photo_url=bike_photo_url,
+            auto_positioned=auto_assigned,
+            checked_in_by=operator.id,
+        )
+        db.add(checkin)
+    else:
+        # Aggiorna Checkin esistente (walk-in: aggiungi foto e operatore)
+        if bike_photo_url is not None:
+            checkin.bike_photo_url = bike_photo_url
+        checkin.checked_in_by = operator.id
 
     # Update token status
     token.status = "checked_in"

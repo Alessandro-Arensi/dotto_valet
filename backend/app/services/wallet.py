@@ -22,10 +22,15 @@ async def generate_wallet_pass_url(
     event_location: str | None,
     event_date: str,
     qr_url: str,
+    position: str | None = None,
 ) -> str | None:
     """
     Generate a Google Wallet pass URL.
 
+    position: posto assegnato (es. "Rastrelliera 2, Slot 5"). Se None (prenotazione
+    senza check-in), in pass si mostra "Sarà assegnato al check-in".
+    Per walk-in è sempre valorizzato; per prenotazioni si aggiorna dopo il check-in
+    (l'utente può riaprire il link "Aggiungi al Wallet" per ottenere la carta aggiornata).
     Returns a URL that users can click to add the pass to their Google Wallet.
     """
     try:
@@ -38,6 +43,16 @@ async def generate_wallet_pass_url(
 
         # For now, return a placeholder URL
         # In production, this would generate a real Google Wallet JWT
+
+        text_modules = [
+            {"header": "Evento", "body": event_name},
+            {"header": "Luogo", "body": event_location or "N/A"},
+            {"header": "Data", "body": event_date},
+            {
+                "header": "Posto / Rastrelliera",
+                "body": position or "Sarà assegnato al check-in",
+            },
+        ]
 
         pass_data = {
             "iss": "dotto-wallet-issuer",
@@ -60,27 +75,18 @@ async def generate_wallet_pass_url(
                             "defaultValue": {"language": "it", "value": event_name}
                         },
                         "cardTitle": {
-                            "defaultValue": {"language": "it", "value": token_code}
+                            "defaultValue": {
+                                "language": "it",
+                                "value": f"{token_code}"
+                                + (f" · {position}" if position else ""),
+                            }
                         },
                         "barcode": {
                             "type": "QR_CODE",
                             "value": qr_url,
                             "alternateText": token_code,
                         },
-                        "textModulesData": [
-                            {
-                                "header": "Evento",
-                                "body": event_name,
-                            },
-                            {
-                                "header": "Luogo",
-                                "body": event_location or "N/A",
-                            },
-                            {
-                                "header": "Data",
-                                "body": event_date,
-                            },
-                        ],
+                        "textModulesData": text_modules,
                         "hexBackgroundColor": "#228be6",
                         "logo": {"sourceUri": {"uri": f"{settings.app_url}/logo.png"}},
                     }

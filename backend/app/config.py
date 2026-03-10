@@ -19,10 +19,10 @@ class Settings(BaseSettings):
     # Database
     database_url: str
 
-    # Supabase
-    supabase_url: str
-    supabase_anon_key: str
-    supabase_service_role_key: str
+    # Supabase (optional in sviluppo: default vuoti per evitare errori se non configurato)
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+    supabase_service_role_key: str = ""
 
     # JWT
     jwt_secret_key: str
@@ -48,7 +48,9 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
     class Config:
-        env_file = ".env"
+        # In sviluppo leggiamo il file .env dalla root del progetto
+        # (una directory sopra backend/), così non serve duplicarlo.
+        env_file = "../.env"
         env_file_encoding = "utf-8"
 
 

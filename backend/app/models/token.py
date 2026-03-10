@@ -6,13 +6,13 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.database import Base
 
-# Token types
+# Token types (schema usa VARCHAR + CHECK, non ENUM PostgreSQL)
 TokenType = Literal["digital", "physical"]
 TokenStatus = Literal[
     "available", "reserved", "checked_in", "checked_out", "expired", "lost"
@@ -29,21 +29,9 @@ class Token(Base):
     )
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
 
-    type: Mapped[str] = mapped_column(
-        Enum("digital", "physical", name="token_type", create_type=False),
-        nullable=False,
-    )
+    type: Mapped[str] = mapped_column(String(10), nullable=False)
     status: Mapped[str] = mapped_column(
-        Enum(
-            "available",
-            "reserved",
-            "checked_in",
-            "checked_out",
-            "expired",
-            "lost",
-            name="token_status",
-            create_type=False,
-        ),
+        String(15),
         default="reserved",
     )
 

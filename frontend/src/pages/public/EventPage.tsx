@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Container,
@@ -33,6 +33,11 @@ import { eventsApi } from '../../api/client';
 
 export default function EventPage() {
   const { slug } = useParams<{ slug: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const searchParams = new URLSearchParams(location.search);
+  const isWalkinMode = searchParams.get('mode') === 'walkin';
   const [reserved, setReserved] = useState(false);
   const [tokenCode, setTokenCode] = useState<string | null>(null);
 
@@ -54,12 +59,27 @@ export default function EventPage() {
     },
   });
 
-  // TODO: Implement reserve mutation
+  // Walk-in mutation (no phone/email required)
+  const walkinMutation = useMutation({
+    mutationFn: () => eventsApi.walkin(slug!),
+    onSuccess: (response) => {
+      // Dopo il click mostriamo direttamente la pagina QR del token
+      navigate(`/t/${response.token.code}`);
+    },
+    onError: (error: any) => {
+      notifications.show({
+        title: 'Errore prenotazione',
+        message: error.detail || 'Impossibile creare la prenotazione walk-in',
+        color: 'red',
+      });
+    },
+  });
+
+  // TODO: Implement reserve mutation (online reservation with phone/email)
   const handleSubmit = async (values: typeof form.values) => {
-    // Placeholder - actual reservation will be implemented
     notifications.show({
       title: 'Prenotazione',
-      message: 'Funzionalità in sviluppo',
+      message: 'La prenotazione online sarà disponibile a breve. Per ora usa il QR walk-in in loco.',
       color: 'blue',
     });
   };
@@ -190,41 +210,67 @@ export default function EventPage() {
 
       {can_reserve ? (
         <Paper withBorder p="xl" radius="md">
-          <Text ta="center" mb="lg">
-            Prenota il tuo posto GRATIS e salta la coda all'ingresso!
-          </Text>
-          
-          <form onSubmit={form.onSubmit(handleSubmit)}>
-            <Stack>
-              <TextInput
-                label="Numero di telefono"
-                placeholder="+39 333 1234567"
-                required
-                leftSection={<IconPhone size={16} />}
-                {...form.getInputProps('phone')}
-              />
-              
-              <TextInput
-                label="Email (opzionale)"
-                placeholder="mario@email.it"
-                leftSection={<IconMail size={16} />}
-                {...form.getInputProps('email')}
-              />
-              
-              <Checkbox
-                label="Tienimi aggiornato su prossimi eventi"
-                {...form.getInputProps('newsletter', { type: 'checkbox' })}
-              />
-              
-              <Button type="submit" size="lg" fullWidth>
-                🎫 Prenota Ora
-              </Button>
-              
-              <Text size="xs" c="dimmed" ta="center">
-                📲 Riceverai il QR via SMS
+          {isWalkinMode ? (
+            <>
+              <Text ta="center" mb="lg">
+                Sei sul posto? Richiedi ora il tuo posto bici senza inserire email o telefono.
               </Text>
-            </Stack>
-          </form>
+
+              <Stack>
+                <Button
+                  type="button"
+                  size="lg"
+                  fullWidth
+                  loading={walkinMutation.isPending}
+                  onClick={() => walkinMutation.mutate()}
+                >
+                  🎫 Richiedi un posto ora
+                </Button>
+
+                <Text size="xs" c="dimmed" ta="center">
+                  Dopo il click ti mostriamo subito il tuo QR, che puoi salvare nel wallet.
+                </Text>
+              </Stack>
+            </>
+          ) : (
+            <>
+              <Text ta="center" mb="lg">
+                Prenota il tuo posto GRATIS e salta la coda all&apos;ingresso!
+              </Text>
+
+              <form onSubmit={form.onSubmit(handleSubmit)}>
+                <Stack>
+                  <TextInput
+                    label="Numero di telefono"
+                    placeholder="+39 333 1234567"
+                    required
+                    leftSection={<IconPhone size={16} />}
+                    {...form.getInputProps('phone')}
+                  />
+
+                  <TextInput
+                    label="Email (opzionale)"
+                    placeholder="mario@email.it"
+                    leftSection={<IconMail size={16} />}
+                    {...form.getInputProps('email')}
+                  />
+
+                  <Checkbox
+                    label="Tienimi aggiornato su prossimi eventi"
+                    {...form.getInputProps('newsletter', { type: 'checkbox' })}
+                  />
+
+                  <Button type="submit" size="lg" fullWidth>
+                    🎫 Prenota Ora
+                  </Button>
+
+                  <Text size="xs" c="dimmed" ta="center">
+                    📲 Riceverai il QR via SMS
+                  </Text>
+                </Stack>
+              </form>
+            </>
+          )}
         </Paper>
       ) : (
         <Alert color="red" icon={<IconAlertCircle size={16} />}>

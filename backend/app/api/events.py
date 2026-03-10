@@ -219,6 +219,14 @@ class ReservationResponse(BaseModel):
     message_sent: bool
 
 
+class WalkInReservationResponse(BaseModel):
+    """Response for walk-in reservations without customer contact data."""
+
+    success: bool
+    token: dict
+    reservation: dict
+
+
 @router.post("/{slug}/reserve", response_model=ReservationResponse)
 async def create_reservation(
     slug: str,
@@ -304,7 +312,9 @@ async def create_reservation(
 
             email_sent = await send_reservation_email(
                 to_email=customer.email,
-                to_name=getattr(customer, "name", None),  # Customer.name might not exist
+                to_name=getattr(
+                    customer, "name", None
+                ),  # Customer.name might not exist
                 token_code=token.code,
                 event_name=event.name,
                 event_location=event.location,
@@ -315,11 +325,12 @@ async def create_reservation(
         except Exception as e:
             # Log error but don't fail the reservation
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to send reservation email to {customer.email}: {e}")
 
     # TODO: Send SMS via Twilio (optional, if phone provided)
-    message_sent = False
+    message_sent = email_sent
 
     return ReservationResponse(
         success=True,
@@ -335,4 +346,100 @@ async def create_reservation(
             ),
         },
         message_sent=message_sent,
+    )
+
+
+@router.post("/{slug}/walkin", response_model=WalkInReservationResponse)
+async def create_walkin_reservation(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a walk-in reservation without phone/email.
+    Intended for users on-site who scan the event QR code.
+    """
+    from app.config import get_settings
+    from app.services.token_service import get_unique_token_code
+
+    settings = get_settings()
+
+    # Find event
+    result = await db.execute(select(Event).where(Event.slug == slug, Event.is_active))
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # Check availability
+    token_result = await db.execute(
+        select(func.count(Token.id)).where(
+            Token.event_id == event.id,
+            Token.status.in_(["reserved", "checked_in"]),
+        )
+    )
+    occupied = token_result.scalar() or 0
+    if occupied >= event.total_capacity:
+        raise HTTPException(status_code=400, detail="Event is sold out")
+
+    # Create token without customer association
+    code = await get_unique_token_code(db)
+    token = Token(
+        code=code,
+        type="digital",
+        status="reserved",
+        event_id=event.id,
+        customer_id=None,
+        reserved_at=datetime.now(UTC),
+        expires_at=event.end_date,
+    )
+    db.add(token)
+    await db.flush()
+
+    # Assegna subito un posto (primo slot libero)
+    racks_result = await db.execute(
+        select(Rack).where(Rack.event_id == event.id).order_by(Rack.rack_number)
+    )
+    racks = racks_result.scalars().all()
+    position_str = None
+    if racks:
+        for rack in racks:
+            occupied_result = await db.execute(
+                select(Checkin.slot_number).where(
+                    Checkin.rack_id == rack.id,
+                    Checkin.checked_out_at.is_(None),
+                )
+            )
+            occupied_slots = {row[0] for row in occupied_result.all()}
+            for slot in range(1, rack.slots + 1):
+                if slot not in occupied_slots:
+                    checkin = Checkin(
+                        token_id=token.id,
+                        event_id=event.id,
+                        rack_id=rack.id,
+                        slot_number=slot,
+                        auto_positioned=True,
+                        checked_in_by=None,
+                    )
+                    db.add(checkin)
+                    await db.flush()
+                    position_str = (
+                        rack.label or f"Rastrelliera {rack.rack_number}"
+                    ) + f", Slot {slot}"
+                    break
+            if position_str:
+                break
+
+    return WalkInReservationResponse(
+        success=True,
+        token={
+            "code": token.code,
+            "qr_url": f"{settings.app_url}/t/{token.code}",
+            "wallet_url": f"{settings.app_url}/wallet/{token.code}",
+            "position": position_str,
+        },
+        reservation={
+            "expires_at": event.end_date.isoformat() if event.end_date else None,
+            "checkin_opens_at": (
+                event.checkin_opens_at.isoformat() if event.checkin_opens_at else None
+            ),
+        },
     )

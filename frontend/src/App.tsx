@@ -26,7 +26,9 @@ function App() {
   return (
     <Routes>
       {/* Public routes */}
+      {/* Alias: support both /evento/:slug and /event/:slug */}
       <Route path="/evento/:slug" element={<EventPage />} />
+      <Route path="/event/:slug" element={<EventPage />} />
       <Route path="/t/:code" element={<TokenPage />} />
       
       {/* Auth routes */}

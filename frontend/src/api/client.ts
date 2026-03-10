@@ -84,6 +84,25 @@ export const eventsApi = {
   // Public
   getAvailability: (slug: string) =>
     fetchApi<EventAvailability>(`/events/${slug}/availability`, { skipAuth: true }),
+
+  // Public reservation (not yet wired in UI)
+  reserve: (slug: string, data: PublicReservationRequest) =>
+    fetchApi<PublicReservationResponse>(`/events/${slug}/reserve`, {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: data.phone,
+        email: data.email,
+        newsletter_opt_in: data.newsletter,
+      }),
+      skipAuth: true,
+    }),
+
+  // Walk-in reservation without contact data
+  walkin: (slug: string) =>
+    fetchApi<PublicReservationResponse>(`/events/${slug}/walkin`, {
+      method: 'POST',
+      skipAuth: true,
+    }),
 };
 
 // Checkin API
@@ -114,6 +133,9 @@ export const tokenApi = {
       `/token/recover?phone=${encodeURIComponent(phone)}${eventId ? `&event_id=${eventId}` : ''}`,
       { skipAuth: true }
     ),
+
+  getWalletPass: (code: string) =>
+    fetchApi<TokenWalletResponse>(`/token/${code}/wallet`, { skipAuth: true }),
 };
 
 // Types
@@ -161,6 +183,28 @@ export interface EventAvailability {
   };
   can_reserve: boolean;
   message: string | null;
+}
+
+export interface PublicReservationRequest {
+  phone: string;
+  email?: string;
+  newsletter: boolean;
+}
+
+export interface PublicReservationResponse {
+  success: boolean;
+  token: {
+    code: string;
+    qr_url: string;
+    wallet_url: string;
+    /** Posto assegnato (es. "Rastrelliera 1, Slot 3") - presente per walk-in */
+    position?: string | null;
+  };
+  reservation: {
+    expires_at: string | null;
+    checkin_opens_at: string | null;
+  };
+  message_sent?: boolean;
 }
 
 export interface CheckinRequest {
@@ -231,6 +275,12 @@ export interface TokenInfo {
     checked_in_at: string;
     photo_url: string | null;
   } | null;
+}
+
+export interface TokenWalletResponse {
+  success: boolean;
+  wallet_url?: string;
+  message?: string;
 }
 
 export interface TokenRecoverResponse {

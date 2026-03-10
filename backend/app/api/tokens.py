@@ -142,12 +142,17 @@ async def get_wallet_pass(
 ):
     """
     Get Google Wallet pass URL for a token.
+    Il pass include il posto/rastrelliera se già assegnato (walk-in o dopo check-in).
+    Riaprendo questo link dopo il check-in si ottiene la carta aggiornata con il posto.
     """
     from app.services.wallet import generate_wallet_pass_url, get_wallet_instructions
 
     result = await db.execute(
         select(Token)
-        .options(selectinload(Token.event))
+        .options(
+            selectinload(Token.event),
+            selectinload(Token.checkin).selectinload(Checkin.rack),
+        )
         .where(Token.code == code.upper())
     )
     token = result.scalar_one_or_none()
@@ -163,12 +168,20 @@ async def get_wallet_pass(
     qr_url = f"{settings.app_url}/t/{token.code}"
     event_date = token.event.start_date.strftime("%d/%m/%Y")
 
+    position = None
+    if token.checkin and token.checkin.rack:
+        r = token.checkin.rack
+        position = (
+            r.label or f"Rastrelliera {r.rack_number}"
+        ) + f", Slot {token.checkin.slot_number}"
+
     wallet_url = await generate_wallet_pass_url(
         token_code=token.code,
         event_name=token.event.name,
         event_location=token.event.location,
         event_date=event_date,
         qr_url=qr_url,
+        position=position,
     )
 
     if wallet_url:

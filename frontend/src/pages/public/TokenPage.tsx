@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Container,
   Paper,
@@ -25,6 +25,7 @@ import {
   IconQrcode,
 } from '@tabler/icons-react';
 import QRCode from 'qrcode.react';
+import { notifications } from '@mantine/notifications';
 
 import { tokenApi } from '../../api/client';
 
@@ -36,6 +37,30 @@ export default function TokenPage() {
     queryKey: ['tokenInfo', code],
     queryFn: () => tokenApi.getInfo(code!),
     enabled: !!code,
+  });
+
+  const walletMutation = useMutation({
+    mutationFn: () => tokenApi.getWalletPass(code!),
+    onSuccess: (response) => {
+      if (response.success && response.wallet_url) {
+        window.location.href = response.wallet_url;
+      } else {
+        notifications.show({
+          title: 'Wallet non disponibile',
+          message:
+            response.message ||
+            "L'integrazione con Google Wallet non è ancora configurata per questo evento.",
+          color: 'orange',
+        });
+      }
+    },
+    onError: (error: any) => {
+      notifications.show({
+        title: 'Errore Wallet',
+        message: error.detail || 'Impossibile generare la carta per il wallet.',
+        color: 'red',
+      });
+    },
   });
 
   if (isLoading) {
@@ -80,7 +105,7 @@ export default function TokenPage() {
         <IconBike size={64} color="var(--mantine-color-blue-6)" />
       </Center>
 
-      {/* QR Code */}
+      {/* QR Code + posto in evidenza */}
       <Paper withBorder p="xl" radius="md" ta="center" mb="xl">
         <Center mb="lg">
           <Paper p="md" bg="white" radius="md" shadow="sm">
@@ -95,6 +120,17 @@ export default function TokenPage() {
         <Title order={2} mb="xs">
           🎫 {token.code}
         </Title>
+
+        {checkin && (
+          <Paper withBorder p="sm" radius="md" mb="md" bg="blue.0">
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>
+              Il tuo posto
+            </Text>
+            <Title order={4} mb={0}>
+              📍 {checkin.position}
+            </Title>
+          </Paper>
+        )}
 
         <Badge size="lg" color={statusColors[token.status] || 'gray'} mb="md">
           {statusLabels[token.status] || token.status}
@@ -187,10 +223,21 @@ export default function TokenPage() {
         <Button
           variant="light"
           leftSection={<IconQrcode size={18} />}
-          onClick={() => {/* TODO: Add to wallet */}}
+          loading={walletMutation.isPending}
+          onClick={() => walletMutation.mutate()}
         >
-          📲 Aggiungi a Google Wallet
+          📲 Aggiungi a Google Wallet / Apple Wallet
         </Button>
+        {token.status === 'reserved' && !checkin && (
+          <Text size="xs" c="dimmed" ta="center">
+            Dopo il check-in in loco potrai riaprire questa pagina e scaricare di nuovo la carta per averla aggiornata con il tuo posto.
+          </Text>
+        )}
+        {checkin && (
+          <Text size="xs" c="dimmed" ta="center">
+            La carta nel wallet include il tuo posto (rastrelliera e slot).
+          </Text>
+        )}
       </Stack>
 
       <Text c="dimmed" size="xs" ta="center" mt="xl">
