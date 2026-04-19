@@ -48,12 +48,43 @@ def normalize_phone(phone: str, default_region: str = "IT") -> str:
     return "".join(c for c in phone if c.isdigit() or c == "+")
 
 
-def mask_phone(phone: str) -> str:
-    """Mask phone number for privacy."""
+def mask_phone(phone: Optional[str]) -> Optional[str]:
+    """Mask phone number for privacy. Returns None if input is None."""
+    if not phone:
+        return None
     if len(phone) < 6:
         return phone
-    # Show first 4 and last 3 digits
     return f"{phone[:4]}****{phone[-3:]}"
+
+
+async def create_customer(
+    db: AsyncSession,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    phone: Optional[str] = None,
+    email: Optional[str] = None,
+    newsletter_opt_in: bool = False,
+) -> Customer:
+    """Create a new customer record. MVP does not de-dup; future work may merge duplicates.
+
+    Raises ValueError if neither name nor phone is provided (at least one identifier required).
+    """
+    if not (first_name or last_name or phone):
+        raise ValueError("Customer needs at least a name or a phone")
+
+    phone_normalized = normalize_phone(phone) if phone else None
+
+    customer = Customer(
+        first_name=first_name,
+        last_name=last_name,
+        phone=phone,
+        phone_normalized=phone_normalized,
+        email=email,
+        newsletter_opt_in=newsletter_opt_in,
+    )
+    db.add(customer)
+    await db.flush()
+    return customer
 
 
 async def get_or_create_customer(
@@ -62,22 +93,24 @@ async def get_or_create_customer(
     email: Optional[str] = None,
     newsletter_opt_in: bool = False,
 ) -> Customer:
-    """Get existing customer by phone or create new one."""
+    """Legacy helper: phone-first identification.
+
+    Kept for operator walk-in flow (CheckinPage) where the operator keys by phone.
+    Public reservation + walkin flows use create_customer() directly with name.
+    """
     phone_normalized = normalize_phone(phone)
-    
+
     result = await db.execute(
         select(Customer).where(Customer.phone_normalized == phone_normalized)
     )
     customer = result.scalar_one_or_none()
-    
+
     if customer:
-        # Update email if provided and not set
         if email and not customer.email:
             customer.email = email
             customer.newsletter_opt_in = newsletter_opt_in
         return customer
-    
-    # Create new customer
+
     customer = Customer(
         phone=phone,
         phone_normalized=phone_normalized,

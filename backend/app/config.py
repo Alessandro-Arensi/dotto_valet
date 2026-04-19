@@ -14,14 +14,9 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
     
-    # Database
+    # Database (Postgres — local compose or Supabase/Neon/Railway hosted)
     database_url: str
-    
-    # Supabase
-    supabase_url: str
-    supabase_anon_key: str
-    supabase_service_role_key: str
-    
+
     # JWT
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"

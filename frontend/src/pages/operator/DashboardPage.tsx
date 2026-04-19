@@ -9,8 +9,6 @@ import {
   RingProgress,
   Badge,
   Table,
-  Loader,
-  Center,
   Alert,
   Button,
 } from '@mantine/core';
@@ -22,47 +20,31 @@ import {
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 
-import { eventsApi, checkinApi, Event, EventStats, CheckinItem } from '../../api/client';
+import { eventsApi, checkinApi } from '../../api/client';
+import { useActiveEventStore } from '../../stores/activeEventStore';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { eventId: activeEventId, eventName, eventSlug } = useActiveEventStore();
 
-  // Fetch events
-  const { data: events, isLoading: eventsLoading } = useQuery({
-    queryKey: ['events'],
-    queryFn: () => eventsApi.list(),
-  });
-
-  const activeEvent = events?.[0];
-
-  // Fetch stats for active event
   const { data: stats } = useQuery({
-    queryKey: ['eventStats', activeEvent?.id],
-    queryFn: () => eventsApi.getStats(activeEvent!.id),
-    enabled: !!activeEvent,
-    refetchInterval: 30000, // Refresh every 30s
-  });
-
-  // Fetch active checkins
-  const { data: checkins } = useQuery({
-    queryKey: ['checkins', activeEvent?.id],
-    queryFn: () => checkinApi.list(activeEvent!.id, 'active'),
-    enabled: !!activeEvent,
+    queryKey: ['eventStats', activeEventId],
+    queryFn: () => eventsApi.getStats(activeEventId!),
+    enabled: !!activeEventId,
     refetchInterval: 30000,
   });
 
-  if (eventsLoading) {
-    return (
-      <Center h={400}>
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  const { data: checkins } = useQuery({
+    queryKey: ['checkins', activeEventId],
+    queryFn: () => checkinApi.list(activeEventId!, 'active'),
+    enabled: !!activeEventId,
+    refetchInterval: 30000,
+  });
 
-  if (!activeEvent) {
+  if (!activeEventId) {
     return (
       <Alert icon={<IconAlertCircle size={16} />} title="Nessun evento attivo" color="yellow">
-        Non ci sono eventi attivi al momento.
+        Non ci sono eventi attivi al momento. Creane uno da <strong>Eventi</strong>.
       </Alert>
     );
   }
@@ -71,8 +53,8 @@ export default function DashboardPage() {
     <Stack gap="lg">
       <Group justify="space-between">
         <div>
-          <Title order={2}>{activeEvent.name}</Title>
-          <Text c="dimmed">{activeEvent.location}</Text>
+          <Title order={2}>{eventName}</Title>
+          <Text c="dimmed">slug: {eventSlug}</Text>
         </div>
         <Group>
           <Button onClick={() => navigate('/checkin')} leftSection={<IconBike size={18} />}>
@@ -195,13 +177,12 @@ function StatsCard({
   value,
   total,
   icon: Icon,
-  color,
 }: {
   title: string;
   value: number;
   total: number;
   icon: React.ComponentType<{ size: number }>;
-  color: string;
+  color?: string;
 }) {
   return (
     <Paper withBorder p="md" radius="md">

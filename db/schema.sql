@@ -64,15 +64,18 @@ CREATE TABLE operators (
 -- =====================
 CREATE TABLE customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    phone VARCHAR(20) NOT NULL,
-    phone_normalized VARCHAR(20) NOT NULL,  -- formato E.164
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    phone VARCHAR(20),
+    phone_normalized VARCHAR(20),  -- E.164 when phone present
     email VARCHAR(255),
     newsletter_opt_in BOOLEAN DEFAULT false,
-    
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
-    UNIQUE(phone_normalized)
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+CREATE INDEX idx_customers_name ON customers(last_name, first_name);
+CREATE INDEX idx_customers_phone_normalized ON customers(phone_normalized);
 
 -- =====================
 -- TABELLA: tokens
@@ -109,15 +112,15 @@ CREATE INDEX idx_tokens_status ON tokens(status);
 -- =====================
 CREATE TABLE checkins (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    token_id UUID NOT NULL REFERENCES tokens(id) UNIQUE,
+    token_id UUID NOT NULL REFERENCES tokens(id),
     event_id UUID NOT NULL REFERENCES events(id),
-    
+
     rack_id UUID NOT NULL REFERENCES racks(id),
     slot_number INT NOT NULL,
-    
-    -- Foto bici (OBBLIGATORIA solo per token fisici - serve per identificazione in caso smarrimento)
-    bike_photo_url VARCHAR(500),
-    
+
+    -- Descrizione bici (opzionale, principalmente per token fisici come fallback identificazione in caso smarrimento gettone)
+    bike_description VARCHAR(500),
+
     -- Flags modalità
     auto_positioned BOOLEAN DEFAULT false,
     
@@ -135,6 +138,26 @@ CREATE TABLE checkins (
 );
 
 CREATE INDEX idx_checkins_active ON checkins(event_id) WHERE checked_out_at IS NULL;
+
+-- =====================
+-- TABELLA: slot_blocks
+-- Uno slot può essere "bloccato" senza checkin (es. bici fuori posto,
+-- bici cargo che occupa slot adiacenti, manutenzione rastrelliera).
+-- L'auto-assign salta slot con block attivo (released_at IS NULL).
+-- =====================
+CREATE TABLE slot_blocks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    rack_id UUID NOT NULL REFERENCES racks(id) ON DELETE CASCADE,
+    slot_number INT NOT NULL,
+    reason TEXT,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by UUID REFERENCES operators(id),
+    released_at TIMESTAMP WITH TIME ZONE,
+    released_by UUID REFERENCES operators(id)
+);
+
+CREATE INDEX idx_slot_blocks_active ON slot_blocks(rack_id, slot_number) WHERE released_at IS NULL;
 
 -- =====================
 -- TABELLA: activity_logs
@@ -233,10 +256,10 @@ $$ LANGUAGE plpgsql;
 -- DATI DI TEST (opzionale)
 -- =====================
 
--- Inserisci un operatore admin di default (PIN: 1234)
--- La hash è generata con bcrypt, questo è un placeholder
-INSERT INTO operators (name, phone, pin_hash, is_admin) VALUES 
-('Admin', '+39000000000', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VSt8.dTpvXq.d2', true);
+-- Admin operator default — login con phone=+39000000000, PIN=1234
+-- Hash bcrypt valido per PIN '1234' (cambiare in produzione)
+INSERT INTO operators (name, phone, pin_hash, is_admin) VALUES
+('Admin', '+39000000000', '$2b$12$W9OZqn0DblDz9dfy.v77qu8ARRqmmfkeRTP0nbsg9fHYTxxtENy/C', true);
 
 -- Inserisci un evento di test
 INSERT INTO events (name, slug, location, start_date, end_date, checkin_opens_at, total_capacity) VALUES

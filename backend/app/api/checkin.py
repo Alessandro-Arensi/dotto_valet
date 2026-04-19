@@ -6,6 +6,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,6 +17,7 @@ from app.models.token import Token
 from app.models.checkin import Checkin
 from app.models.rack import Rack
 from app.models.operator import Operator
+from app.models.slot_block import SlotBlock
 from app.schemas.checkin import (
     CheckinCreate, CheckinResponse, CheckinTokenInfo, CheckinPositionInfo, 
     CheckinCustomerInfo, CheckoutRequest, CheckoutResponse, CheckoutCheckinInfo
@@ -24,8 +26,39 @@ from app.services.auth import get_current_operator
 from app.services.token_service import (
     get_unique_token_code, get_or_create_customer, mask_phone
 )
+from app.services.sms import send_checkin_sms
+from app.config import get_settings
 
 router = APIRouter()
+
+
+async def _pick_next_free_slot(db: AsyncSession, event_id):
+    """Scan racks by rack_number, return first slot not checked-in nor blocked.
+
+    Returns (rack, slot_number) or (None, None) if nothing free.
+    """
+    racks_result = await db.execute(
+        select(Rack).where(Rack.event_id == event_id).order_by(Rack.rack_number)
+    )
+    for rack in racks_result.scalars().all():
+        occ_result = await db.execute(
+            select(Checkin.slot_number).where(
+                Checkin.rack_id == rack.id,
+                Checkin.checked_out_at.is_(None),
+            )
+        )
+        occupied = {row[0] for row in occ_result.all()}
+        blk_result = await db.execute(
+            select(SlotBlock.slot_number).where(
+                SlotBlock.rack_id == rack.id,
+                SlotBlock.released_at.is_(None),
+            )
+        )
+        blocked = {row[0] for row in blk_result.all()}
+        for s in range(1, rack.slots + 1):
+            if s not in occupied and s not in blocked:
+                return rack, s
+    return None, None
 
 
 @router.post("/checkin", response_model=CheckinResponse)
@@ -74,13 +107,21 @@ async def create_checkin(
                 detail="Customer already has an active token"
             )
         
-        # Get active event (for now, get the first active one)
-        event_result = await db.execute(
-            select(Event).where(Event.is_active == True).limit(1)
-        )
-        event = event_result.scalar_one_or_none()
-        if not event:
-            raise HTTPException(status_code=400, detail="No active event")
+        # Use supplied event_id or fall back to first active event.
+        if data.event_id:
+            event_result = await db.execute(
+                select(Event).where(Event.id == data.event_id, Event.is_active == True)
+            )
+            event = event_result.scalar_one_or_none()
+            if not event:
+                raise HTTPException(status_code=404, detail="Event not found or inactive")
+        else:
+            event_result = await db.execute(
+                select(Event).where(Event.is_active == True).limit(1)
+            )
+            event = event_result.scalar_one_or_none()
+            if not event:
+                raise HTTPException(status_code=400, detail="No active event")
         
         # Create token
         code = await get_unique_token_code(db)
@@ -116,13 +157,7 @@ async def create_checkin(
                 detail=f"Token cannot be checked in (status: {token.status})"
             )
     
-    # Validate physical token photo requirement
-    if data.physical_token or token.type == "physical":
-        if not data.bike_photo_base64:
-            raise HTTPException(
-                status_code=400,
-                detail="Photo required for physical tokens"
-            )
+    if data.physical_token:
         token.type = "physical"
     
     # Get position
@@ -131,32 +166,10 @@ async def create_checkin(
     auto_assigned = False
     
     if data.auto_position:
-        # Auto-assign position
-        racks_result = await db.execute(
-            select(Rack).where(Rack.event_id == token.event_id).order_by(Rack.rack_number)
-        )
-        racks = racks_result.scalars().all()
-        
-        for r in racks:
-            occupied_result = await db.execute(
-                select(Checkin.slot_number).where(
-                    Checkin.rack_id == r.id,
-                    Checkin.checked_out_at.is_(None),
-                )
-            )
-            occupied_slots = {row[0] for row in occupied_result.all()}
-            
-            for s in range(1, r.slots + 1):
-                if s not in occupied_slots:
-                    rack = r
-                    slot_number = s
-                    auto_assigned = True
-                    break
-            if rack:
-                break
-        
+        rack, slot_number = await _pick_next_free_slot(db, token.event_id)
         if not rack:
             raise HTTPException(status_code=400, detail="No available slots")
+        auto_assigned = True
     else:
         # Manual position
         if not data.rack_id or not data.slot_number:
@@ -185,37 +198,49 @@ async def create_checkin(
         
         slot_number = data.slot_number
     
-    # Handle photo upload (placeholder - will be implemented with Supabase Storage)
-    bike_photo_url = None
-    if data.bike_photo_base64:
-        # TODO: Upload to Supabase Storage
-        bike_photo_url = f"https://placeholder.com/photos/{token.code}.jpg"
-        warnings.append("Photo upload not yet implemented")
-    
-    # Create checkin
     checkin = Checkin(
         token_id=token.id,
         event_id=token.event_id,
         rack_id=rack.id,
         slot_number=slot_number,
-        bike_photo_url=bike_photo_url,
+        bike_description=data.bike_description,
         auto_positioned=auto_assigned,
         checked_in_by=operator.id,
     )
     db.add(checkin)
-    
-    # Update token status
+
     token.status = "checked_in"
-    
+
     await db.flush()
-    
-    # Prepare response
+
+    # Eager load customer if not already loaded (e.g., when create_token=true path)
+    if token.customer_id and not token.customer:
+        cust_result = await db.execute(
+            select(Token).options(selectinload(Token.customer)).where(Token.id == token.id)
+        )
+        reloaded = cust_result.scalar_one()
+        token.customer = reloaded.customer
+
+    settings = get_settings()
+    position_str = f"Rastrelliera {rack.rack_number}, Slot {slot_number}"
+    if rack.label:
+        position_str = f"{rack.label}, Slot {slot_number}"
+
+    message_sent = False
+    if token.customer and token.customer.phone_normalized:
+        message_sent = await send_checkin_sms(
+            phone=token.customer.phone_normalized,
+            token_code=token.code,
+            position=position_str,
+            qr_url=f"{settings.app_url}/t/{token.code}",
+        )
+
     customer_info = None
     if token.customer:
         customer_info = CheckinCustomerInfo(
             phone_masked=mask_phone(token.customer.phone_normalized)
         )
-    
+
     return CheckinResponse(
         success=True,
         checkin_id=checkin.id,
@@ -227,7 +252,7 @@ async def create_checkin(
             auto_assigned=auto_assigned,
         ),
         customer=customer_info,
-        message_sent=False,  # TODO: Implement SMS
+        message_sent=message_sent,
         warnings=warnings,
     )
 
@@ -291,10 +316,74 @@ async def create_checkout(
         checkin=CheckoutCheckinInfo(
             position=position,
             checked_in_at=checkin.checked_in_at,
-            bike_photo_url=checkin.bike_photo_url,
+            bike_description=checkin.bike_description,
         ),
         customer=customer_info,
         token_type=token.type,
+    )
+
+
+class ReassignResponse(BaseModel):
+    success: bool
+    checkin_id: UUID
+    token_code: str
+    position: CheckinPositionInfo
+
+
+@router.post("/checkins/{checkin_id}/reassign", response_model=ReassignResponse)
+async def reassign_checkin(
+    checkin_id: UUID,
+    operator: Operator = Depends(get_current_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reassign a checkin to a different slot + block the original one.
+
+    Used when operator discovers the assigned slot is physically occupied
+    by another bike (misparked, cargo) and needs to move the customer.
+    """
+    result = await db.execute(
+        select(Checkin).options(selectinload(Checkin.token)).where(Checkin.id == checkin_id)
+    )
+    checkin = result.scalar_one_or_none()
+    if not checkin:
+        raise HTTPException(status_code=404, detail="Check-in not found")
+    if checkin.checked_out_at is not None:
+        raise HTTPException(status_code=400, detail="Check-in already closed")
+
+    # Block the slot currently held by this checkin (so no one else gets it)
+    block = SlotBlock(
+        rack_id=checkin.rack_id,
+        slot_number=checkin.slot_number,
+        reason="Occupato da bici fuori posto (reassign automatico)",
+        created_by=operator.id,
+    )
+    db.add(block)
+    await db.flush()
+
+    # Temporarily move this checkin off the blocked slot so _pick_next_free_slot
+    # sees it as unavailable (the block itself handles that), and find a new spot.
+    new_rack, new_slot = await _pick_next_free_slot(db, checkin.event_id)
+    if not new_rack or new_slot is None:
+        # Rollback the block since we can't reassign
+        block.released_at = datetime.now(timezone.utc)
+        block.released_by = operator.id
+        await db.flush()
+        raise HTTPException(status_code=400, detail="No other slots available")
+
+    checkin.rack_id = new_rack.id
+    checkin.slot_number = new_slot
+    await db.flush()
+
+    return ReassignResponse(
+        success=True,
+        checkin_id=checkin.id,
+        token_code=checkin.token.code,
+        position=CheckinPositionInfo(
+            rack_number=new_rack.rack_number,
+            slot_number=new_slot,
+            rack_label=new_rack.label,
+            auto_assigned=True,
+        ),
     )
 
 
@@ -332,7 +421,7 @@ async def list_checkins(
             "slot_number": c.slot_number,
             "checked_in_at": c.checked_in_at,
             "checked_out_at": c.checked_out_at,
-            "bike_photo_url": c.bike_photo_url,
+            "bike_description": c.bike_description,
             "customer_phone": mask_phone(c.token.customer.phone_normalized) if c.token.customer else None,
         }
         for c in checkins

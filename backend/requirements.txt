@@ -19,24 +19,14 @@ phonenumbers==8.13.27
 
 # Authentication
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+passlib==1.7.4
+bcrypt==4.2.1  # passlib 1.7.4 incompatible with bcrypt 5+
 
 # HTTP Client
 httpx==0.26.0
 
-# Supabase (for Storage)
-supabase==2.3.4
-
 # SMS
 twilio==8.10.3
 
-# Image processing
-Pillow==10.2.0
-
-# QR Code generation
-qrcode[pil]==7.4.2
-
 # Utilities
 python-dotenv==1.0.0
-
-

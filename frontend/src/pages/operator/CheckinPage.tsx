@@ -7,12 +7,11 @@ import {
   Group,
   Stack,
   TextInput,
+  Textarea,
   Button,
-  Switch,
   Alert,
   Badge,
   Divider,
-  Select,
   Checkbox,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
@@ -22,11 +21,12 @@ import {
   IconPhone,
   IconMail,
   IconCheck,
-  IconAlertCircle,
   IconMapPin,
+  IconRefresh,
 } from '@tabler/icons-react';
 
-import { eventsApi, checkinApi, CheckinRequest } from '../../api/client';
+import { eventsApi, checkinApi, adminApi, CheckinRequest, CheckinResponse } from '../../api/client';
+import { useActiveEventStore } from '../../stores/activeEventStore';
 import QRScanner from '../../components/common/QRScanner';
 
 type Step = 'scan' | 'form' | 'physical';
@@ -36,20 +36,16 @@ export default function CheckinPage() {
   const [step, setStep] = useState<Step>('scan');
   const [scannedToken, setScannedToken] = useState<string | null>(null);
   const [isPhysicalToken, setIsPhysicalToken] = useState(false);
-  const [autoPosition, setAutoPosition] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
+  const [bikeDescription, setBikeDescription] = useState('');
+  const [lastCheckin, setLastCheckin] = useState<CheckinResponse | null>(null);
 
-  // Fetch events and next slot
-  const { data: events } = useQuery({
-    queryKey: ['events'],
-    queryFn: () => eventsApi.list(),
-  });
-  const activeEvent = events?.[0];
+  const { eventId: activeEventId, eventName: activeEventName } = useActiveEventStore();
 
   const { data: nextSlot } = useQuery({
-    queryKey: ['nextSlot', activeEvent?.id],
-    queryFn: () => eventsApi.getNextSlot(activeEvent!.id),
-    enabled: !!activeEvent && autoPosition,
+    queryKey: ['nextSlot', activeEventId],
+    queryFn: () => eventsApi.getNextSlot(activeEventId!),
+    enabled: !!activeEventId,
   });
 
   const form = useForm({
@@ -60,27 +56,26 @@ export default function CheckinPage() {
     },
   });
 
-  // Checkin mutation
+  const resetForm = () => {
+    setStep('scan');
+    setScannedToken(null);
+    setIsPhysicalToken(false);
+    setBikeDescription('');
+    setLastCheckin(null);
+    form.reset();
+  };
+
+  const invalidateCaches = () => {
+    queryClient.invalidateQueries({ queryKey: ['checkins'] });
+    queryClient.invalidateQueries({ queryKey: ['eventStats'] });
+    queryClient.invalidateQueries({ queryKey: ['nextSlot'] });
+  };
+
   const checkinMutation = useMutation({
     mutationFn: (data: CheckinRequest) => checkinApi.create(data),
     onSuccess: (response) => {
-      notifications.show({
-        title: 'Check-in completato!',
-        message: `Bici in ${response.position.rack_label || `Rast. ${response.position.rack_number}`}, Slot ${response.position.slot_number}`,
-        color: 'green',
-        icon: <IconCheck />,
-      });
-      
-      // Reset form
-      setStep('scan');
-      setScannedToken(null);
-      setIsPhysicalToken(false);
-      form.reset();
-      
-      // Refresh data
-      queryClient.invalidateQueries({ queryKey: ['checkins'] });
-      queryClient.invalidateQueries({ queryKey: ['eventStats'] });
-      queryClient.invalidateQueries({ queryKey: ['nextSlot'] });
+      setLastCheckin(response);
+      invalidateCaches();
     },
     onError: (error: Error) => {
       notifications.show({
@@ -91,47 +86,133 @@ export default function CheckinPage() {
     },
   });
 
+  const reassignMutation = useMutation({
+    mutationFn: (checkinId: string) => adminApi.reassignCheckin(checkinId),
+    onSuccess: (response) => {
+      setLastCheckin((prev) =>
+        prev
+          ? {
+              ...prev,
+              position: {
+                rack_number: response.position.rack_number,
+                slot_number: response.position.slot_number,
+                rack_label: response.position.rack_label,
+                auto_assigned: true,
+              },
+            }
+          : prev,
+      );
+      notifications.show({
+        title: 'Riassegnato',
+        message: `Nuovo slot: ${response.position.rack_label || `Rast. ${response.position.rack_number}`}, Slot ${response.position.slot_number}`,
+        color: 'blue',
+      });
+      invalidateCaches();
+    },
+    onError: (e: Error) =>
+      notifications.show({ message: e.message, color: 'red' }),
+  });
+
   const handleScan = (code: string) => {
-    // Extract token code from URL if needed
     const tokenCode = code.includes('/t/') ? code.split('/t/')[1] : code;
     setScannedToken(tokenCode.toUpperCase());
     setShowScanner(false);
-    setStep('form');
+    setStep(isPhysicalToken ? 'physical' : 'form');
   };
 
   const handleSubmit = () => {
+    if (!scannedToken && !activeEventId) {
+      notifications.show({
+        message: 'Seleziona un evento attivo prima di creare un nuovo token',
+        color: 'red',
+      });
+      return;
+    }
     const data: CheckinRequest = {
       token_code: scannedToken || `NEW-${Date.now()}`,
       create_token: !scannedToken,
+      event_id: !scannedToken ? activeEventId || undefined : undefined,
       customer_phone: form.values.phone || undefined,
       customer_email: form.values.email || undefined,
       newsletter_opt_in: form.values.newsletter,
       physical_token: isPhysicalToken,
-      auto_position: autoPosition,
-      rack_id: autoPosition ? undefined : undefined, // TODO: manual selection
-      slot_number: autoPosition ? undefined : undefined,
+      auto_position: true,
+      bike_description: isPhysicalToken && bikeDescription ? bikeDescription : undefined,
     };
-    
+
     checkinMutation.mutate(data);
   };
 
+  if (lastCheckin) {
+    const pos = lastCheckin.position;
+    const rackLabel = pos.rack_label || `Rastrelliera ${pos.rack_number}`;
+    return (
+      <Stack gap="lg">
+        <Title order={2}>Check-in Bici</Title>
+        <Paper withBorder p="xl" radius="md">
+          <Stack>
+            <Alert color="green" title="✅ Check-in completato!" variant="filled">
+              🎫 {lastCheckin.token.code} — {rackLabel}, Slot {pos.slot_number}
+            </Alert>
+
+            <Text size="sm" c="dimmed">
+              Guida il cliente alla posizione assegnata. Se lo slot è già
+              occupato da un'altra bici, premi "Slot occupato" per bloccarlo
+              e ottenere un nuovo slot.
+            </Text>
+
+            <Group grow>
+              <Button
+                variant="light"
+                color="orange"
+                leftSection={<IconRefresh size={18} />}
+                loading={reassignMutation.isPending}
+                onClick={() => reassignMutation.mutate(lastCheckin.checkin_id)}
+              >
+                Slot occupato, riassegna
+              </Button>
+              <Button
+                color="green"
+                leftSection={<IconCheck size={18} />}
+                onClick={resetForm}
+              >
+                Tutto ok, prossimo
+              </Button>
+            </Group>
+          </Stack>
+        </Paper>
+      </Stack>
+    );
+  }
+
   return (
     <Stack gap="lg">
-      <Title order={2}>Check-in Bici</Title>
+      <Group justify="space-between" align="flex-end">
+        <Title order={2}>Check-in Bici</Title>
+        {activeEventName && (
+          <Badge size="lg" variant="light" color="blue">
+            {activeEventName}
+          </Badge>
+        )}
+      </Group>
 
-      {/* Stats badge */}
-      {nextSlot && autoPosition && (
+      {!activeEventId && (
+        <Alert color="yellow">
+          Nessun evento selezionato. Scegline uno dal menù in alto per fare check-in walk-in.
+        </Alert>
+      )}
+
+      {nextSlot && (
         <Alert variant="light" color="blue" icon={<IconMapPin size={16} />}>
           Prossimo slot disponibile: <strong>{nextSlot.rack_label || `Rastrelliera ${nextSlot.rack_number}`}, Slot {nextSlot.slot_number}</strong>
         </Alert>
       )}
 
-      {/* Step: Scan */}
       {step === 'scan' && (
         <Paper withBorder p="lg" radius="md">
           <Stack>
             <Text fw={500} size="lg">🎫 Token Digitale (consigliato)</Text>
-            
+
             {showScanner ? (
               <QRScanner onScan={handleScan} onClose={() => setShowScanner(false)} />
             ) : (
@@ -144,7 +225,20 @@ export default function CheckinPage() {
               </Button>
             )}
 
-            <Divider label="oppure nuovo cliente" labelPosition="center" />
+            <Divider label="oppure codice manuale" labelPosition="center" />
+
+            <TextInput
+              placeholder="DOT-XXXX"
+              value={scannedToken || ''}
+              onChange={(e) => setScannedToken(e.currentTarget.value.toUpperCase() || null)}
+            />
+            {scannedToken && (
+              <Button onClick={() => setStep('form')}>
+                Continua con {scannedToken} →
+              </Button>
+            )}
+
+            <Divider label="oppure nuovo cliente (walk-in)" labelPosition="center" />
 
             <TextInput
               label="Telefono cliente"
@@ -152,14 +246,14 @@ export default function CheckinPage() {
               leftSection={<IconPhone size={16} />}
               {...form.getInputProps('phone')}
             />
-            
+
             <TextInput
               label="Email (opzionale)"
               placeholder="mario@email.it"
               leftSection={<IconMail size={16} />}
               {...form.getInputProps('email')}
             />
-            
+
             <Checkbox
               label="Iscriviti alla newsletter"
               {...form.getInputProps('newsletter', { type: 'checkbox' })}
@@ -172,7 +266,7 @@ export default function CheckinPage() {
             )}
 
             <Divider />
-            
+
             <Button
               variant="subtle"
               color="gray"
@@ -187,7 +281,6 @@ export default function CheckinPage() {
         </Paper>
       )}
 
-      {/* Step: Form (after scan or phone input) */}
       {step === 'form' && !isPhysicalToken && (
         <Paper withBorder p="lg" radius="md">
           <Stack>
@@ -197,28 +290,17 @@ export default function CheckinPage() {
               </Alert>
             )}
 
-            {/* Position */}
             <Paper p="md" withBorder>
-              <Group justify="space-between" mb="sm">
-                <Text fw={500}>📍 Posizione automatica</Text>
-                <Switch
-                  checked={autoPosition}
-                  onChange={(e) => setAutoPosition(e.currentTarget.checked)}
-                  size="lg"
-                  color="teal"
-                />
-              </Group>
-              
-              {autoPosition && nextSlot && (
+              <Text fw={500} mb="sm">📍 Posizione assegnata</Text>
+              {nextSlot && (
                 <Badge size="lg" color="teal">
                   {nextSlot.rack_label || `Rast. ${nextSlot.rack_number}`}, Slot {nextSlot.slot_number}
                 </Badge>
               )}
             </Paper>
 
-            {/* Info for digital token */}
             <Alert color="blue" variant="light">
-              💡 Token digitale: nessuna foto necessaria. Il cliente può sempre recuperare il QR tramite il suo numero di telefono.
+              💡 Token digitale: nessuna foto/descrizione necessaria. Il cliente può sempre recuperare il QR tramite il suo numero di telefono.
             </Alert>
 
             <Group>
@@ -238,7 +320,6 @@ export default function CheckinPage() {
         </Paper>
       )}
 
-      {/* Step: Physical token */}
       {step === 'physical' && (
         <Paper withBorder p="lg" radius="md">
           <Stack>
@@ -265,35 +346,25 @@ export default function CheckinPage() {
                   🎫 {scannedToken}
                 </Alert>
 
-                {/* Position */}
                 <Paper p="md" withBorder>
-                  <Group justify="space-between" mb="sm">
-                    <Text fw={500}>📍 Posizione automatica</Text>
-                    <Switch
-                      checked={autoPosition}
-                      onChange={(e) => setAutoPosition(e.currentTarget.checked)}
-                      size="lg"
-                      color="teal"
-                    />
-                  </Group>
-                  
-                  {autoPosition && nextSlot && (
+                  <Text fw={500} mb="sm">📍 Posizione assegnata</Text>
+                  {nextSlot && (
                     <Badge size="lg" color="teal">
                       {nextSlot.rack_label || `Rast. ${nextSlot.rack_number}`}, Slot {nextSlot.slot_number}
                     </Badge>
                   )}
                 </Paper>
 
-                {/* Photo required for physical */}
-                <Paper p="md" withBorder bg="orange.0">
-                  <Text fw={600} mb="sm">📸 Foto Bici (OBBLIGATORIA)</Text>
-                  <Text size="sm" c="dimmed" mb="md">
-                    La foto è necessaria per identificare la bici in caso di smarrimento del gettone.
-                  </Text>
-                  <Button color="orange">
-                    📷 Scatta foto bici
-                  </Button>
-                </Paper>
+                <Textarea
+                  label="Descrizione bici (opzionale)"
+                  description="Utile per identificare la bici se il cliente perde il gettone."
+                  placeholder="es. Bici nera mountain, cestino, luci LED"
+                  maxLength={500}
+                  autosize
+                  minRows={2}
+                  value={bikeDescription}
+                  onChange={(e) => setBikeDescription(e.currentTarget.value)}
+                />
 
                 <Alert color="yellow" variant="light">
                   📋 Ricorda: consegna il gettone al cliente dopo il check-in!
@@ -304,6 +375,7 @@ export default function CheckinPage() {
                     setStep('scan');
                     setScannedToken(null);
                     setIsPhysicalToken(false);
+                    setBikeDescription('');
                   }}>
                     ← Indietro
                   </Button>
@@ -334,5 +406,3 @@ export default function CheckinPage() {
     </Stack>
   );
 }
-
-

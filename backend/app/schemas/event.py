@@ -20,9 +20,31 @@ class EventBase(BaseModel):
     fast_mode_threshold: int = Field(default=80, ge=0, le=100)
 
 
-class EventCreate(EventBase):
-    """Schema for creating an event."""
-    pass
+class EventCreate(BaseModel):
+    """Schema for creating an event. Slug auto-generated from name if omitted."""
+    name: str = Field(..., min_length=1, max_length=255)
+    slug: Optional[str] = Field(None, max_length=100, pattern=r"^[a-z0-9-]+$")
+    description: Optional[str] = None
+    location: Optional[str] = Field(None, max_length=255)
+    start_date: datetime
+    end_date: Optional[datetime] = None
+    checkin_opens_at: Optional[datetime] = None
+    total_capacity: int = Field(..., gt=0)
+    fast_mode_threshold: int = Field(default=80, ge=0, le=100)
+
+
+class EventUpdate(BaseModel):
+    """Schema for updating an event. All fields optional."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    slug: Optional[str] = Field(None, min_length=1, max_length=100, pattern=r"^[a-z0-9-]+$")
+    description: Optional[str] = None
+    location: Optional[str] = Field(None, max_length=255)
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    checkin_opens_at: Optional[datetime] = None
+    total_capacity: Optional[int] = Field(None, gt=0)
+    fast_mode_threshold: Optional[int] = Field(None, ge=0, le=100)
+    is_active: Optional[bool] = None
 
 
 class EventRead(EventBase):

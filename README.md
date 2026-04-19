@@ -205,14 +205,6 @@ Cliente ha perso il gettone:
 | PostgreSQL 15+ | Database principale |
 | pgcrypto | UUID generation |
 
-### Media Storage
-
-| Opzione | Pro |
-|---------|-----|
-| Supabase Storage | Integrato, facile setup |
-| Cloudflare R2 | Economico, S3-compatible |
-| AWS S3 | Standard enterprise |
-
 ### Infrastruttura
 
 | Componente | Suggerimento |

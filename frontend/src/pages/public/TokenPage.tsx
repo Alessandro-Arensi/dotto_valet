@@ -12,8 +12,8 @@ import {
   Badge,
   Group,
   Button,
-  Image,
   Divider,
+  Tooltip,
 } from '@mantine/core';
 import {
   IconBike,
@@ -147,17 +147,11 @@ export default function TokenPage() {
             </Text>
           </Group>
           
-          {checkin.photo_url && (
+          {checkin.bike_description && (
             <>
               <Divider my="md" />
-              <Text size="sm" fw={500} mb="sm">Foto bici</Text>
-              <Image
-                src={checkin.photo_url}
-                alt="Foto bici"
-                radius="md"
-                mah={200}
-                fit="contain"
-              />
+              <Text size="sm" fw={500} mb="xs">📝 Descrizione bici</Text>
+              <Text size="sm">{checkin.bike_description}</Text>
             </>
           )}
         </Paper>
@@ -182,15 +176,16 @@ export default function TokenPage() {
         </Alert>
       )}
 
-      {/* Actions */}
       <Stack mt="xl">
-        <Button
-          variant="light"
-          leftSection={<IconQrcode size={18} />}
-          onClick={() => {/* TODO: Add to wallet */}}
-        >
-          📲 Aggiungi a Google Wallet
-        </Button>
+        <Tooltip label="Integrazione Google Wallet in arrivo">
+          <Button
+            variant="light"
+            leftSection={<IconQrcode size={18} />}
+            disabled
+          >
+            📲 Aggiungi a Google Wallet
+          </Button>
+        </Tooltip>
       </Stack>
 
       <Text c="dimmed" size="xs" ta="center" mt="xl">

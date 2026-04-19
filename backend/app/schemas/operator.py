@@ -22,9 +22,29 @@ class OperatorRead(BaseModel):
     is_admin: bool
     is_active: bool
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
+
+
+class OperatorCreate(BaseModel):
+    """Schema for creating an operator."""
+    name: str = Field(..., min_length=1, max_length=255)
+    phone: str = Field(..., min_length=5, max_length=20)
+    email: Optional[str] = Field(None, max_length=255)
+    pin: str = Field(..., min_length=4, max_length=6, pattern=r"^\d+$")
+    is_admin: bool = False
+    is_active: bool = True
+
+
+class OperatorUpdate(BaseModel):
+    """Schema for updating an operator. All optional."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    phone: Optional[str] = Field(None, min_length=5, max_length=20)
+    email: Optional[str] = Field(None, max_length=255)
+    pin: Optional[str] = Field(None, min_length=4, max_length=6, pattern=r"^\d+$")
+    is_admin: Optional[bool] = None
+    is_active: Optional[bool] = None
 
 
 class TokenResponse(BaseModel):

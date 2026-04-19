@@ -18,14 +18,13 @@ class Checkin(Base):
     __tablename__ = "checkins"
     
     id: Mapped[UUID] = mapped_column(primary_key=True, server_default=func.gen_random_uuid())
-    token_id: Mapped[UUID] = mapped_column(ForeignKey("tokens.id"), unique=True, nullable=False)
+    token_id: Mapped[UUID] = mapped_column(ForeignKey("tokens.id"), nullable=False)
     event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id"), nullable=False)
-    
+
     rack_id: Mapped[UUID] = mapped_column(ForeignKey("racks.id"), nullable=False)
     slot_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    
-    # Photo (required for physical tokens)
-    bike_photo_url: Mapped[Optional[str]] = mapped_column(String(500))
+
+    bike_description: Mapped[Optional[str]] = mapped_column(String(500))
     
     # Flags
     auto_positioned: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -43,7 +42,7 @@ class Checkin(Base):
     override_reason: Mapped[Optional[str]] = mapped_column(Text)
     
     # Relationships
-    token = relationship("Token", back_populates="checkin")
+    token = relationship("Token", foreign_keys=[token_id])
     event = relationship("Event", back_populates="checkins")
     rack = relationship("Rack", back_populates="checkins")
     

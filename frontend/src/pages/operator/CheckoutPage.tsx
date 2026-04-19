@@ -8,19 +8,23 @@ import {
   Stack,
   Button,
   Alert,
-  Image,
   Badge,
+  TextInput,
+  Divider,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconQrcode, IconCheck, IconMapPin, IconClock } from '@tabler/icons-react';
 
 import { checkinApi, CheckoutResponse } from '../../api/client';
+import { useActiveEventStore } from '../../stores/activeEventStore';
 import QRScanner from '../../components/common/QRScanner';
 
 export default function CheckoutPage() {
   const queryClient = useQueryClient();
+  const { eventName: activeEventName } = useActiveEventStore();
   const [showScanner, setShowScanner] = useState(false);
   const [scannedToken, setScannedToken] = useState<string | null>(null);
+  const [manualCode, setManualCode] = useState('');
   const [checkoutData, setCheckoutData] = useState<CheckoutResponse | null>(null);
 
   // Checkout mutation
@@ -65,7 +69,19 @@ export default function CheckoutPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Check-out Bici</Title>
+      <Group justify="space-between" align="flex-end">
+        <Title order={2}>Check-out Bici</Title>
+        {activeEventName && (
+          <Badge size="lg" variant="light" color="blue">
+            {activeEventName}
+          </Badge>
+        )}
+      </Group>
+
+      <Text size="sm" c="dimmed">
+        Il check-out cerca il token globalmente: funziona anche se il cliente
+        è di un evento diverso da quello selezionato.
+      </Text>
 
       {!checkoutData ? (
         <Paper withBorder p="lg" radius="md">
@@ -82,6 +98,27 @@ export default function CheckoutPage() {
                 Scansiona QR Cliente
               </Button>
             )}
+
+            <Divider label="oppure inserisci codice" labelPosition="center" />
+
+            <Group align="flex-end">
+              <TextInput
+                flex={1}
+                placeholder="DOT-XXXX"
+                value={manualCode}
+                onChange={(e) => setManualCode(e.currentTarget.value.toUpperCase())}
+              />
+              <Button
+                disabled={!manualCode}
+                loading={checkoutMutation.isPending}
+                onClick={() => {
+                  setScannedToken(manualCode);
+                  checkoutMutation.mutate(manualCode);
+                }}
+              >
+                Check-out
+              </Button>
+            </Group>
 
             {scannedToken && checkoutMutation.isPending && (
               <Alert color="blue" title="Elaborazione...">
@@ -140,16 +177,10 @@ export default function CheckoutPage() {
               </Stack>
             </Paper>
 
-            {checkoutData.checkin.bike_photo_url && (
+            {checkoutData.checkin.bike_description && (
               <Paper p="md" withBorder>
-                <Text fw={500} mb="sm">📸 Foto bici</Text>
-                <Image
-                  src={checkoutData.checkin.bike_photo_url}
-                  alt="Foto bici"
-                  radius="md"
-                  mah={300}
-                  fit="contain"
-                />
+                <Text fw={500} mb="sm">📝 Descrizione bici</Text>
+                <Text>{checkoutData.checkin.bike_description}</Text>
               </Paper>
             )}
 

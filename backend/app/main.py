@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.api import auth, events, checkin, tokens
+from app.api import auth, events, checkin, tokens, racks, operators
 
 settings = get_settings()
 
@@ -47,6 +47,8 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(events.router, prefix="/api/events", tags=["Events"])
 app.include_router(checkin.router, prefix="/api", tags=["Check-in/out"])
 app.include_router(tokens.router, prefix="/api/token", tags=["Tokens"])
+app.include_router(racks.router, prefix="/api", tags=["Racks"])
+app.include_router(operators.router, prefix="/api/operators", tags=["Operators"])
 
 
 @app.get("/")

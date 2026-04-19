@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   Container,
@@ -16,53 +16,97 @@ import {
   Checkbox,
   Loader,
   Badge,
+  Tabs,
+  Divider,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
+import QRCode from 'qrcode.react';
 import {
   IconBike,
   IconMapPin,
   IconCalendar,
   IconClock,
-  IconPhone,
   IconMail,
   IconAlertCircle,
+  IconCheck,
+  IconWalk,
+  IconCamera,
+  IconUser,
 } from '@tabler/icons-react';
 
-import { eventsApi } from '../../api/client';
+import {
+  eventsApi,
+  ReservationRequest,
+  ReservationResponse,
+  WalkinRequest,
+  WalkinResponse,
+} from '../../api/client';
 
-export default function EventPage() {
+type Mode = 'reserve' | 'walkin';
+
+interface Props {
+  defaultTab?: Mode;
+}
+
+export default function EventPage({ defaultTab = 'reserve' }: Props) {
   const { slug } = useParams<{ slug: string }>();
-  const [reserved, setReserved] = useState(false);
-  const [tokenCode, setTokenCode] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<Mode>(defaultTab);
+  const [reservationResult, setReservationResult] =
+    useState<ReservationResponse | null>(null);
+  const [walkinResult, setWalkinResult] = useState<WalkinResponse | null>(null);
 
-  // Fetch availability
   const { data, isLoading, error } = useQuery({
     queryKey: ['eventAvailability', slug],
     queryFn: () => eventsApi.getAvailability(slug!),
     enabled: !!slug,
   });
 
-  const form = useForm({
+  const reserveForm = useForm({
     initialValues: {
-      phone: '',
+      first_name: '',
+      last_name: '',
       email: '',
       newsletter: false,
     },
     validate: {
-      phone: (value) => (value.length < 5 ? 'Inserisci un numero valido' : null),
+      first_name: (v) => (v.trim().length >= 1 ? null : 'Nome richiesto'),
+      last_name: (v) => (v.trim().length >= 1 ? null : 'Cognome richiesto'),
     },
   });
 
-  // TODO: Implement reserve mutation
-  const handleSubmit = async (values: typeof form.values) => {
-    // Placeholder - actual reservation will be implemented
-    notifications.show({
-      title: 'Prenotazione',
-      message: 'Funzionalità in sviluppo',
-      color: 'blue',
-    });
-  };
+  const walkinForm = useForm({
+    initialValues: { first_name: '', last_name: '' },
+    validate: {
+      first_name: (v) => (v.trim().length >= 1 ? null : 'Nome richiesto'),
+      last_name: (v) => (v.trim().length >= 1 ? null : 'Cognome richiesto'),
+    },
+  });
+
+  const reserveMutation = useMutation({
+    mutationFn: (payload: ReservationRequest) =>
+      eventsApi.reserve(slug!, payload),
+    onSuccess: (response) => setReservationResult(response),
+    onError: (err: Error) =>
+      notifications.show({
+        title: 'Prenotazione non riuscita',
+        message: err.message,
+        color: 'red',
+        icon: <IconAlertCircle size={16} />,
+      }),
+  });
+
+  const walkinMutation = useMutation({
+    mutationFn: (payload: WalkinRequest) => eventsApi.walkin(slug!, payload),
+    onSuccess: (response) => setWalkinResult(response),
+    onError: (err: Error) =>
+      notifications.show({
+        title: 'Check-in non riuscito',
+        message: err.message,
+        color: 'red',
+        icon: <IconAlertCircle size={16} />,
+      }),
+  });
 
   if (isLoading) {
     return (
@@ -84,57 +128,146 @@ export default function EventPage() {
 
   const { event, availability, can_reserve, message } = data;
 
-  if (reserved && tokenCode) {
+  // =========== Reservation success screen ===========
+  if (reservationResult) {
+    const qrTarget = `${window.location.origin}/t/${reservationResult.token.code}`;
     return (
       <Container size="sm" py="xl">
         <Center mb="xl">
-          <IconBike size={64} color="var(--mantine-color-green-6)" />
+          <IconCheck size={64} color="var(--mantine-color-green-6)" />
         </Center>
-        
+
         <Title ta="center" order={2} c="green">
           ✅ Prenotato!
         </Title>
-        
+        <Text ta="center" c="dimmed" mt="xs">
+          {reservationResult.reservation.customer_name}
+        </Text>
+
         <Paper withBorder p="xl" mt="xl" radius="md" ta="center">
-          <Text size="xl" fw={700} mb="lg">
-            🎫 {tokenCode}
+          <Center mb="lg">
+            <Paper p="md" bg="white" radius="md" shadow="sm">
+              <QRCode value={qrTarget} size={220} level="M" />
+            </Paper>
+          </Center>
+
+          <Text size="xl" fw={700} mb="xs">
+            🎫 {reservationResult.token.code}
           </Text>
-          
           <Text c="dimmed" mb="lg">
             {event.name}
           </Text>
-          
-          <Button fullWidth size="lg" mb="sm">
-            📲 Aggiungi a Google Wallet
-          </Button>
-          
-          <Button fullWidth variant="light">
-            📤 Condividi QR
+
+          <Alert
+            color="yellow"
+            variant="light"
+            icon={<IconCamera size={18} />}
+            mb="md"
+          >
+            <Text fw={600}>Fai uno screenshot di questa pagina</Text>
+            <Text size="sm">
+              Mostra il QR all'ingresso il giorno dell'evento per il check-in.
+            </Text>
+          </Alert>
+
+          <Button
+            component={Link}
+            to={`/t/${reservationResult.token.code}`}
+            fullWidth
+            variant="light"
+          >
+            Apri pagina ticket
           </Button>
         </Paper>
-        
+
         <Text ta="center" c="dimmed" mt="lg" size="sm">
-          📱 QR inviato via SMS
+          Servizio SMS in arrivo. Per ora conserva lo screenshot.
         </Text>
       </Container>
     );
   }
+
+  // =========== Walk-in success screen ===========
+  if (walkinResult) {
+    const qrTarget = `${window.location.origin}/t/${walkinResult.token.code}`;
+    const rackLabel =
+      walkinResult.position.rack_label ||
+      `Rastrelliera ${walkinResult.position.rack_number}`;
+    return (
+      <Container size="sm" py="xl">
+        <Center mb="xl">
+          <IconCheck size={64} color="var(--mantine-color-green-6)" />
+        </Center>
+
+        <Title ta="center" order={2} c="green">
+          ✅ Check-in effettuato!
+        </Title>
+        <Text ta="center" c="dimmed" mt="xs">
+          {walkinResult.customer_name}
+        </Text>
+
+        <Paper withBorder p="xl" mt="xl" radius="md" ta="center">
+          <Center mb="lg">
+            <Paper p="md" bg="white" radius="md" shadow="sm">
+              <QRCode value={qrTarget} size={220} level="M" />
+            </Paper>
+          </Center>
+
+          <Text size="xl" fw={700} mb="xs">
+            🎫 {walkinResult.token.code}
+          </Text>
+
+          <Paper p="md" withBorder radius="md" mb="md" bg="blue.0">
+            <Group justify="center" gap="xs" mb="xs">
+              <IconMapPin size={20} />
+              <Text fw={700} size="lg">
+                {rackLabel}, Slot {walkinResult.position.slot_number}
+              </Text>
+            </Group>
+            <Text size="sm" c="dimmed">
+              Posteggia la bici in questa posizione
+            </Text>
+          </Paper>
+
+          <Alert
+            color="yellow"
+            variant="light"
+            icon={<IconCamera size={18} />}
+          >
+            <Text fw={600}>Fai uno screenshot ora</Text>
+            <Text size="sm">
+              Serve al ritiro. Se lo perdi, chiedi all'operatore di cercarti
+              per nome e cognome.
+            </Text>
+          </Alert>
+        </Paper>
+
+        <Text ta="center" c="dimmed" mt="lg" size="sm">
+          Mostra il QR all'operatore quando ritiri la bici.
+        </Text>
+      </Container>
+    );
+  }
+
+  const busy = availability.percent >= 80;
 
   return (
     <Container size="sm" py="xl">
       <Center mb="xl">
         <IconBike size={64} color="var(--mantine-color-blue-6)" />
       </Center>
-      
+
       <Title ta="center" order={2}>
         {event.name}
       </Title>
-      
+
       <Stack gap="xs" mt="md" mb="xl">
         {event.location && (
           <Group justify="center" gap="xs">
             <IconMapPin size={16} />
-            <Text size="sm" c="dimmed">{event.location}</Text>
+            <Text size="sm" c="dimmed">
+              {event.location}
+            </Text>
           </Group>
         )}
         <Group justify="center" gap="xs">
@@ -152,7 +285,8 @@ export default function EventPage() {
           <Group justify="center" gap="xs">
             <IconClock size={16} />
             <Text size="sm" c="dimmed">
-              Check-in dalle {new Date(event.checkin_opens_at).toLocaleTimeString('it-IT', {
+              Check-in dalle{' '}
+              {new Date(event.checkin_opens_at).toLocaleTimeString('it-IT', {
                 hour: '2-digit',
                 minute: '2-digit',
               })}
@@ -161,7 +295,6 @@ export default function EventPage() {
         )}
       </Stack>
 
-      {/* Availability */}
       <Paper withBorder p="md" radius="md" mb="xl">
         <Text size="sm" c="dimmed" tt="uppercase" fw={600} mb="xs">
           🅿️ Posti Disponibili
@@ -169,14 +302,14 @@ export default function EventPage() {
         <Progress
           value={availability.percent}
           size="xl"
-          color={availability.percent > 80 ? 'orange' : 'blue'}
+          color={busy ? 'orange' : 'blue'}
           mb="xs"
         />
         <Group justify="space-between">
           <Text size="sm" fw={500}>
             {availability.available} / {availability.total} posti
           </Text>
-          <Badge color={availability.percent > 80 ? 'orange' : 'blue'}>
+          <Badge color={busy ? 'orange' : 'blue'}>
             {availability.percent.toFixed(0)}%
           </Badge>
         </Group>
@@ -188,48 +321,125 @@ export default function EventPage() {
         </Alert>
       )}
 
-      {can_reserve ? (
-        <Paper withBorder p="xl" radius="md">
-          <Text ta="center" mb="lg">
-            Prenota il tuo posto GRATIS e salta la coda all'ingresso!
-          </Text>
-          
-          <form onSubmit={form.onSubmit(handleSubmit)}>
-            <Stack>
-              <TextInput
-                label="Numero di telefono"
-                placeholder="+39 333 1234567"
-                required
-                leftSection={<IconPhone size={16} />}
-                {...form.getInputProps('phone')}
-              />
-              
-              <TextInput
-                label="Email (opzionale)"
-                placeholder="mario@email.it"
-                leftSection={<IconMail size={16} />}
-                {...form.getInputProps('email')}
-              />
-              
-              <Checkbox
-                label="Tienimi aggiornato su prossimi eventi"
-                {...form.getInputProps('newsletter', { type: 'checkbox' })}
-              />
-              
-              <Button type="submit" size="lg" fullWidth>
-                🎫 Prenota Ora
-              </Button>
-              
-              <Text size="xs" c="dimmed" ta="center">
-                📲 Riceverai il QR via SMS
-              </Text>
-            </Stack>
-          </form>
-        </Paper>
-      ) : (
+      {!can_reserve ? (
         <Alert color="red" icon={<IconAlertCircle size={16} />}>
           Prenotazioni non disponibili
         </Alert>
+      ) : (
+        <Tabs
+          value={activeTab}
+          onChange={(v) => setActiveTab((v as Mode) || 'reserve')}
+        >
+          <Tabs.List grow>
+            <Tabs.Tab value="reserve" leftSection={<IconCalendar size={16} />}>
+              Prenota online
+            </Tabs.Tab>
+            <Tabs.Tab value="walkin" leftSection={<IconWalk size={16} />}>
+              Sono al parco
+            </Tabs.Tab>
+          </Tabs.List>
+
+          <Tabs.Panel value="reserve" pt="md">
+            <Paper withBorder p="xl" radius="md">
+              <Text ta="center" mb="lg" fw={500}>
+                Prenota il tuo posto GRATIS
+              </Text>
+              <form onSubmit={reserveForm.onSubmit((v) =>
+                reserveMutation.mutate({
+                  first_name: v.first_name.trim(),
+                  last_name: v.last_name.trim(),
+                  email: v.email || undefined,
+                  newsletter_opt_in: v.newsletter,
+                })
+              )}>
+                <Stack>
+                  <TextInput
+                    label="Nome"
+                    placeholder="Mario"
+                    required
+                    leftSection={<IconUser size={16} />}
+                    {...reserveForm.getInputProps('first_name')}
+                  />
+                  <TextInput
+                    label="Cognome"
+                    placeholder="Rossi"
+                    required
+                    leftSection={<IconUser size={16} />}
+                    {...reserveForm.getInputProps('last_name')}
+                  />
+                  <TextInput
+                    label="Email (opzionale)"
+                    placeholder="mario@email.it"
+                    leftSection={<IconMail size={16} />}
+                    {...reserveForm.getInputProps('email')}
+                  />
+                  <Checkbox
+                    label="Tienimi aggiornato su prossimi eventi"
+                    {...reserveForm.getInputProps('newsletter', { type: 'checkbox' })}
+                  />
+                  <Button
+                    type="submit"
+                    size="lg"
+                    fullWidth
+                    loading={reserveMutation.isPending}
+                  >
+                    🎫 Prenota ora
+                  </Button>
+                  <Text size="xs" c="dimmed" ta="center">
+                    Riceverai il QR sullo schermo. Fai uno screenshot per il giorno dell'evento.
+                  </Text>
+                </Stack>
+              </form>
+            </Paper>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="walkin" pt="md">
+            <Paper withBorder p="xl" radius="md">
+              <Text ta="center" mb="xs" fw={500}>
+                Check-in diretto
+              </Text>
+              <Text size="sm" c="dimmed" ta="center" mb="lg">
+                Il sistema ti assegna subito un posto. Mostra il QR all'operatore.
+              </Text>
+              <form onSubmit={walkinForm.onSubmit((v) =>
+                walkinMutation.mutate({
+                  first_name: v.first_name.trim(),
+                  last_name: v.last_name.trim(),
+                })
+              )}>
+                <Stack>
+                  <TextInput
+                    label="Nome"
+                    placeholder="Mario"
+                    required
+                    leftSection={<IconUser size={16} />}
+                    {...walkinForm.getInputProps('first_name')}
+                  />
+                  <TextInput
+                    label="Cognome"
+                    placeholder="Rossi"
+                    required
+                    leftSection={<IconUser size={16} />}
+                    {...walkinForm.getInputProps('last_name')}
+                  />
+                  <Button
+                    type="submit"
+                    size="lg"
+                    fullWidth
+                    color="teal"
+                    loading={walkinMutation.isPending}
+                  >
+                    🚲 Assegnami un posto
+                  </Button>
+                  <Divider my="xs" />
+                  <Text size="xs" c="dimmed" ta="center">
+                    Senza smartphone? Chiedi all'operatore di gestirti con un gettone fisico.
+                  </Text>
+                </Stack>
+              </form>
+            </Paper>
+          </Tabs.Panel>
+        </Tabs>
       )}
 
       <Text c="dimmed" size="xs" ta="center" mt="xl">
@@ -238,5 +448,3 @@ export default function EventPage() {
     </Container>
   );
 }
-
-

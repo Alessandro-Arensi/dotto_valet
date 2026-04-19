@@ -13,22 +13,23 @@ from app.database import Base
 
 
 class Customer(Base):
-    """Customer model - bike owners with minimal data."""
-    
+    """Customer model - bike owners. Name is primary identifier; phone optional (future SMS)."""
+
     __tablename__ = "customers"
-    
+
     id: Mapped[UUID] = mapped_column(primary_key=True, server_default=func.gen_random_uuid())
-    phone: Mapped[str] = mapped_column(String(20), nullable=False)
-    phone_normalized: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    first_name: Mapped[Optional[str]] = mapped_column(String(100))
+    last_name: Mapped[Optional[str]] = mapped_column(String(100))
+    phone: Mapped[Optional[str]] = mapped_column(String(20))
+    phone_normalized: Mapped[Optional[str]] = mapped_column(String(20))
     email: Mapped[Optional[str]] = mapped_column(String(255))
     newsletter_opt_in: Mapped[bool] = mapped_column(Boolean, default=False)
-    
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    
+
     # Relationships
     tokens = relationship("Token", back_populates="customer")
-    
+
     def __repr__(self) -> str:
-        return f"<Customer {self.phone_normalized}>"
-
-
+        label = f"{self.last_name} {self.first_name}" if self.last_name else self.phone_normalized
+        return f"<Customer {label}>"

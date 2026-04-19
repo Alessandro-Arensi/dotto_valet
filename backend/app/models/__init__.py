@@ -7,6 +7,7 @@ from app.models.operator import Operator
 from app.models.customer import Customer
 from app.models.token import Token
 from app.models.checkin import Checkin
+from app.models.slot_block import SlotBlock
 from app.models.activity_log import ActivityLog
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "Customer",
     "Token",
     "Checkin",
+    "SlotBlock",
     "ActivityLog",
 ]
 

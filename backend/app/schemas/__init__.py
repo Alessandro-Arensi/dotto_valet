@@ -1,14 +1,16 @@
 """
 Dottò - Pydantic Schemas
 """
-from app.schemas.event import EventCreate, EventRead, EventStats, EventAvailability
+from app.schemas.event import EventCreate, EventUpdate, EventRead, EventStats, EventAvailability
 from app.schemas.token import TokenCreate, TokenRead, TokenInfo
 from app.schemas.checkin import CheckinCreate, CheckinRead, CheckoutRequest
-from app.schemas.operator import OperatorLogin, OperatorRead, TokenResponse
-from app.schemas.customer import CustomerCreate, CustomerRead
+from app.schemas.operator import OperatorLogin, OperatorRead, OperatorCreate, OperatorUpdate, TokenResponse
+from app.schemas.customer import CustomerRead
+from app.schemas.rack import RackCreate, RackUpdate, RackRead
 
 __all__ = [
     "EventCreate",
+    "EventUpdate",
     "EventRead",
     "EventStats",
     "EventAvailability",
@@ -20,9 +22,13 @@ __all__ = [
     "CheckoutRequest",
     "OperatorLogin",
     "OperatorRead",
+    "OperatorCreate",
+    "OperatorUpdate",
     "TokenResponse",
-    "CustomerCreate",
     "CustomerRead",
+    "RackCreate",
+    "RackUpdate",
+    "RackRead",
 ]
 
 

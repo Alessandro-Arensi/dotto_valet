@@ -25,13 +25,22 @@ class Token(Base):
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     
     type: Mapped[str] = mapped_column(
-        Enum("digital", "physical", name="token_type", create_type=False),
-        nullable=False
+        Enum(
+            "digital", "physical",
+            name="token_type",
+            native_enum=False,
+            length=10,
+        ),
+        nullable=False,
     )
     status: Mapped[str] = mapped_column(
-        Enum("available", "reserved", "checked_in", "checked_out", "expired", "lost", 
-             name="token_status", create_type=False),
-        default="reserved"
+        Enum(
+            "available", "reserved", "checked_in", "checked_out", "expired", "lost",
+            name="token_status",
+            native_enum=False,
+            length=15,
+        ),
+        default="reserved",
     )
     
     event_id: Mapped[Optional[UUID]] = mapped_column(ForeignKey("events.id"))
@@ -45,7 +54,14 @@ class Token(Base):
     # Relationships
     event = relationship("Event", back_populates="tokens")
     customer = relationship("Customer", back_populates="tokens")
-    checkin = relationship("Checkin", back_populates="token", uselist=False)
+    # Active checkin only (checked_out_at IS NULL). Physical tokens can have multiple historical rows.
+    checkin = relationship(
+        "Checkin",
+        uselist=False,
+        primaryjoin="and_(Token.id==Checkin.token_id, Checkin.checked_out_at.is_(None))",
+        foreign_keys="Checkin.token_id",
+        viewonly=True,
+    )
     
     def __repr__(self) -> str:
         return f"<Token {self.code}>"

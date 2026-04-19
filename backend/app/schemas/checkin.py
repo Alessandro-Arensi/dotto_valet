@@ -4,36 +4,33 @@ Dottò - Checkin Schemas
 from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class CheckinCreate(BaseModel):
     """Schema for creating a check-in."""
     token_code: str = Field(..., description="Token code from QR scan")
-    
+
     # For new digital tokens (without reservation)
     create_token: bool = False
     customer_phone: Optional[str] = None
     customer_email: Optional[str] = None
     newsletter_opt_in: bool = False
-    
+
+    # Event to attach the new token to (used when create_token=true).
+    # If omitted, backend falls back to the first active event.
+    event_id: Optional[UUID] = None
+
     # For physical tokens
     physical_token: bool = False
-    
+
     # Position
     auto_position: bool = True
     rack_id: Optional[UUID] = None
     slot_number: Optional[int] = Field(None, ge=1)
-    
-    # Photo (required for physical tokens)
-    bike_photo_base64: Optional[str] = None
-    
-    @field_validator("bike_photo_base64")
-    @classmethod
-    def validate_photo_for_physical(cls, v, info):
-        """Photo is required for physical tokens."""
-        # Validation happens at API level with full context
-        return v
+
+    # Bike description (optional, useful for physical tokens as fallback ID)
+    bike_description: Optional[str] = Field(None, max_length=500)
 
 
 class CheckinRead(BaseModel):
@@ -43,11 +40,11 @@ class CheckinRead(BaseModel):
     event_id: UUID
     rack_id: UUID
     slot_number: int
-    bike_photo_url: Optional[str]
+    bike_description: Optional[str]
     auto_positioned: bool
     checked_in_at: datetime
     checked_out_at: Optional[datetime]
-    
+
     class Config:
         from_attributes = True
 
@@ -99,7 +96,7 @@ class CheckoutCheckinInfo(BaseModel):
     """Checkin info for check-out."""
     position: str
     checked_in_at: datetime
-    bike_photo_url: Optional[str]
+    bike_description: Optional[str]
 
 
 # Update forward refs

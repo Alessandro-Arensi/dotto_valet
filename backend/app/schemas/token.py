@@ -63,7 +63,7 @@ class TokenCheckinInfo(BaseModel):
     """Checkin info for token."""
     position: str  # "Rastrelliera 3, Slot 7"
     checked_in_at: datetime
-    photo_url: Optional[str]
+    bike_description: Optional[str]
 
 
 class TokenQR(BaseModel):
