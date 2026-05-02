@@ -31,12 +31,10 @@ flowchart LR
         STok[services/token_service.py<br/>E.164 / DOT-XXXX]
         SSMS[services/sms.py<br/>Twilio]
         SWlt[services/wallet.py<br/>Google Wallet stub]
-        SStor[services/storage.py<br/>Supabase Storage]
     end
 
     subgraph Data["Data Tier"]
         PG[(PostgreSQL 15<br/>SQLAlchemy async/asyncpg)]
-        SB[(Supabase Storage<br/>bucket: bike-photos)]
     end
 
     subgraph External["External"]
@@ -54,7 +52,7 @@ flowchart LR
     APIC -- "/api/*" --> Main
     Main --> RAuth & REvt & RCk & RTok
     RAuth --> SAuth
-    RCk --> STok & SStor
+    RCk --> STok
     REvt --> STok
     RTok --> SWlt
     SAuth --> PG
@@ -62,7 +60,6 @@ flowchart LR
     REvt --> PG
     RCk --> PG
     RTok --> PG
-    SStor --> SB
     SSMS --> TW
     SWlt --> GW
 ```
@@ -71,7 +68,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    DB[(postgres:15-alpine<br/>:5432<br/>init: supabase/schema.sql)]
+    DB[(postgres:15-alpine<br/>:5432<br/>init: db/schema.sql)]
     BE[backend<br/>uvicorn :8000<br/>hot-reload]
     FE[frontend<br/>node:20 vite dev :5173<br/>proxy /api -> backend]
     FE -->|HTTP /api| BE

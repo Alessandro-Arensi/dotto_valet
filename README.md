@@ -211,7 +211,9 @@ Cliente ha perso il gettone:
 |------------|--------------|
 | Hosting Frontend | Vercel / Cloudflare Pages |
 | Hosting Backend | Railway / Render / Fly.io |
-| Database | Supabase / Neon / Railway |
+| Database | PostgreSQL gestito (es. **Railway Postgres** nello stesso progetto del backend, oppure Neon) |
+
+Per la demo operativa (Vercel + Railway) vedi [DEPLOY.md](DEPLOY.md).
 
 ---
 

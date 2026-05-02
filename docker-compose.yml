@@ -1,5 +1,5 @@
 # Dottò - Development Stack
-# Use this for local development when NOT using Supabase cloud
+# Stack locale: Postgres + backend + frontend (senza DB hosted)
 
 services:
   # PostgreSQL Database

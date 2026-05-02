@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
     
-    # Database (Postgres — local compose or Supabase/Neon/Railway hosted)
+    # Database (Postgres — docker-compose locale o hosted es. Railway Postgres, Neon)
     database_url: str
 
     # JWT

@@ -103,10 +103,8 @@ Manifests: [backend/requirements.txt](../backend/requirements.txt), [frontend/pa
 | phonenumbers    | 8.13.27  | E.164 normalization                           |
 | python-jose[cryptography] | 3.3.0 | JWT                                       |
 | passlib[bcrypt] | 1.7.4    | PIN hashing                                   |
-| supabase        | 2.3.4    | Storage client                                |
+| httpx           | 0.26.0   | HTTP client                                   |
 | twilio          | 8.10.3   | SMS client (stub-safe when unconfigured)      |
-| Pillow          | 10.2.0   | Image resize before upload                    |
-| qrcode[pil]     | 7.4.2    | **Declared but not used** in backend code     |
 
 ### Frontend
 
@@ -126,15 +124,15 @@ Manifests: [backend/requirements.txt](../backend/requirements.txt), [frontend/pa
 ### Infrastructure
 
 - **Local dev**: [docker-compose.yml](../docker-compose.yml) brings up `db` (postgres:15 with schema seed), `backend` (FastAPI with code mount + reload), `frontend` (node:20 running `vite`). Frontend dev server proxies `/api` to `http://localhost:8000` (see [frontend/vite.config.ts:43-46](../frontend/vite.config.ts#L43)).
-- **Cloud target**: Supabase for DB + object storage. Backend uses both `postgresql://…supabase.co` (via SQLAlchemy) and `supabase-py` (for the `bike-photos` bucket). See [supabase/SETUP.md](../supabase/SETUP.md).
-- **Recommended hosting** (README, not wired): Vercel/Cloudflare Pages for FE, Railway/Render/Fly.io for BE.
+- **Cloud target (demo)**: [DEPLOY.md](../DEPLOY.md) — frontend Vercel, backend + **PostgreSQL su Railway** (`DATABASE_URL` da reference al plugin Postgres). Nessun BaaS: solo SQLAlchemy/asyncpg verso Postgres.
+- **Altre opzioni**: stesso backend con qualsiasi Postgres compatibile (Neon, compose, ecc.).
 
 ### Environment Variables
 
 Loaded via `pydantic-settings` in [backend/app/config.py](../backend/app/config.py):
 
 ```
-DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+DATABASE_URL
 JWT_SECRET_KEY, JWT_ALGORITHM (default HS256), JWT_EXPIRE_MINUTES (default 480)
 TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
 APP_URL (default https://dotto.bike), ENVIRONMENT, DEBUG
@@ -173,8 +171,7 @@ dotto_valet/
 │       └── services/        # Cross-router logic
 │           ├── auth.py      # JWT + bcrypt + get_current_operator dependency
 │           ├── token_service.py  # DOT-XXXX, E.164, get_or_create_customer, mask_phone
-│           ├── sms.py       # Twilio (NOT CALLED from endpoints yet)
-│           ├── storage.py   # Supabase upload_bike_photo (NOT CALLED from endpoints yet)
+│           ├── sms.py       # Twilio
 │           └── wallet.py    # Google Wallet stub (returns None)
 ├── frontend/
 │   ├── index.html
@@ -193,14 +190,13 @@ dotto_valet/
 │       └── pages/
 │           ├── operator/{LoginPage,DashboardPage,CheckinPage,CheckoutPage}.tsx
 │           └── public/{EventPage,TokenPage}.tsx
-└── supabase/
-    ├── schema.sql           # Authoritative SQL: tables, CHECKs, views, functions, seed
-    └── SETUP.md             # Supabase project bootstrap guide
+└── db/
+    └── schema.sql           # Authoritative SQL: tables, CHECKs, views, functions, seed
 ```
 
 **Missing relative to README spec** (not a bug — plan gaps):
 
-- `backend/alembic/` — no migrations tree; schema is managed by `supabase/schema.sql` directly.
+- `backend/alembic/` — no migrations tree; schema is managed by `db/schema.sql` directly.
 - `frontend/src/components/reservation/`, `checkin/`, `checkout/`, `search/` — not implemented; logic inlined in page components.
 - `frontend/src/hooks/`, `frontend/src/pages/public/WalletPass.tsx`, `operator/SearchPage.tsx` — not implemented.
 - `frontend/src/api/{events,tokens,checkin}.ts` — consolidated in `client.ts`.
@@ -248,7 +244,7 @@ No background workers, no message queue, no cache layer. All state is synchronou
 
 ## 5. Data Model
 
-Authoritative SQL: [supabase/schema.sql](../supabase/schema.sql). ORM mirror: [backend/app/models/](../backend/app/models/).
+Authoritative SQL: [db/schema.sql](../db/schema.sql). ORM mirror: [backend/app/models/](../backend/app/models/).
 
 See [assets/er-diagram.md](assets/er-diagram.md) for the Mermaid ER diagram, constraint table, and token state machine.
 
@@ -329,12 +325,12 @@ Each feature below: **business purpose → entry points → controllers/services
 - **Three modes** (mutually exclusive):
   1. **Existing token** (reservation or physical): FE sends `{token_code}`. BE looks up token, validates status transitions from `reserved`/`available` → `checked_in`.
   2. **New digital on-the-spot**: FE sends `{create_token: true, customer_phone, ...}`. BE creates customer, checks 1-active-token rule, generates DOT code, inserts `Token(status='checked_in', reserved_at=now)`, picks the first active event.
-  3. **Physical token**: FE flags `physical_token=true` and must supply `bike_photo_base64`. BE sets `token.type='physical'` and requires the photo (400 if absent).
+  3. **Physical token**: FE flags `physical_token=true`; BE sets `token.type='physical'`. Optional `bike_description` on `CheckinCreate` — no upload foto lato API al momento (vedi §8.5).
 - **Position assignment**:
   - `auto_position=true` (default): BE scans racks ordered by `rack_number`, for each fetches occupied slots (checkins where `checked_out_at IS NULL`), picks first free 1..`rack.slots`.
   - `auto_position=false`: FE supplies `{rack_id, slot_number}`; BE validates rack + slot availability. **However**, [CheckinPage.tsx:111-112](../frontend/src/pages/operator/CheckinPage.tsx#L111) passes `undefined` for both — manual selection UI is not implemented.
-- **Photo upload**: currently placeholder. [checkin.py:188-193](../backend/app/api/checkin.py#L188) sets `bike_photo_url = "https://placeholder.com/photos/{code}.jpg"` and appends a warning. The real uploader [services/storage.py:upload_bike_photo](../backend/app/services/storage.py#L16) is wired to Supabase Storage bucket `bike-photos` with Pillow resize to 1200px + JPEG q85 — **but not called from the endpoint**.
-- **Side effects intended, NOT wired**: SMS confirmation (`message_sent: False` hardcoded at [checkin.py:230](../backend/app/api/checkin.py#L230)); activity log row.
+- **Foto bici / object storage**: non implementati nel backend attuale (nessun `services/storage.py`, nessun campo foto su `CheckinCreate`).
+- **Side effects**: check-in chiama `send_checkin_sms` quando Twilio è configurato; `activity_logs` resta senza write dagli endpoint.
 - **Edge cases**:
   - Customer already has active token → 400 "Customer already has an active token".
   - No active event in DB → 400 "No active event".
@@ -405,7 +401,7 @@ Configured in [main.py:37-43](../backend/app/main.py#L37) from `CORS_ORIGINS` en
 
 ### 7.5 Logging / Observability
 
-- **None structured**. `print()` calls in [sms.py](../backend/app/services/sms.py), [storage.py](../backend/app/services/storage.py), [wallet.py](../backend/app/services/wallet.py), and the lifespan handler. SQLAlchemy `echo=settings.debug` prints SQL in dev only.
+- **None structured**. `print()` calls in [sms.py](../backend/app/services/sms.py), [wallet.py](../backend/app/services/wallet.py), e nel lifespan handler. SQLAlchemy `echo=settings.debug` prints SQL in dev only.
 
 ### 7.6 Rate Limiting
 
@@ -448,13 +444,13 @@ In [tokens.py](../backend/app/api/tokens.py), `router.get("/{code}")` (line 24) 
 
 [services/wallet.py:106-108](../backend/app/services/wallet.py#L106) prints the pass JSON and always returns `None`. The endpoint does its best to explain this (`setup: get_wallet_instructions()`), but frontend buttons ("📲 Aggiungi a Google Wallet") go nowhere — wire a click handler or hide the button when unconfigured.
 
-### 8.5 Photo upload not wired
+### 8.5 Bike photo / object storage not implemented
 
-Backend accepts `bike_photo_base64`, stores placeholder URL. The real uploader exists in `services/storage.py` and even resizes + re-encodes with Pillow — just unused by the endpoint. Also, large base64 strings sent as JSON bodies will hit FastAPI's default request limits; consider multipart or a direct-upload signed URL pattern.
+Nessun upload persistente per le foto (specifica README vs implementazione). Per aggiungerlo servirà storage (S3, bucket su Railway, ecc.) e campi/schema oltre a `bike_description`.
 
-### 8.6 SMS is a stub
+### 8.6 SMS dipende da Twilio
 
-[services/sms.py:16-18](../backend/app/services/sms.py#L16) prints a log if Twilio isn't configured and returns `False`. All three callers (`send_reservation_sms`, `send_checkin_sms`, `send_token_recovery_sms`) exist — but **no endpoint calls them**. `message_sent` in responses is hardcoded `False`.
+[services/sms.py](../backend/app/services/sms.py) stampa e ritorna `False` se Twilio non è configurato. `send_checkin_sms` è chiamato da `POST /api/checkin`; reservation/recovery restano da collegare agli endpoint se serve.
 
 ### 8.7 Active event is implicit
 
@@ -621,7 +617,6 @@ Base path: `/api`. Auth via `Authorization: Bearer <JWT>` unless marked "Public"
 | [backend/app/services/auth.py](../backend/app/services/auth.py) | `verify_pin`, `hash_pin`, `create_access_token`, `decode_token`, `get_current_operator`, `get_current_admin` |
 | [backend/app/services/token_service.py](../backend/app/services/token_service.py) | `generate_token_code`, `get_unique_token_code`, `normalize_phone`, `mask_phone`, `get_or_create_customer` |
 | [backend/app/services/sms.py](../backend/app/services/sms.py) | `send_sms`, `send_reservation_sms`, `send_checkin_sms`, `send_token_recovery_sms` |
-| [backend/app/services/storage.py](../backend/app/services/storage.py) | `upload_bike_photo`, `delete_bike_photo`           |
 | [backend/app/services/wallet.py](../backend/app/services/wallet.py) | `generate_wallet_pass_url`, `get_wallet_instructions` |
 
 ### Frontend
@@ -648,7 +643,7 @@ Base path: `/api`. Auth via `Authorization: Bearer <JWT>` unless marked "Public"
 
 | ID   | Assumption                                                                 | Confidence | Verification                                         |
 |------|----------------------------------------------------------------------------|------------|------------------------------------------------------|
-| A1   | Alembic is aspirational; schema is managed via `supabase/schema.sql` seed. | High       | No `alembic/` directory, `alembic.ini`, or migrations dir. |
+| A1   | Alembic is aspirational; schema is managed via `db/schema.sql` seed. | High       | No `alembic/` directory, `alembic.ini`, or migrations dir. |
 | A2   | A single event is considered "active" at any time (`events[0]`).           | High       | Hardcoded in Dashboard + Check-in frontend.          |
 | A3   | Physical tokens are seeded via DB inserts, not an admin UI.                | High       | No admin CRUD endpoints exist.                       |
 | A4   | SMS, Google Wallet, photo upload are known TODOs, not missing spec.        | High       | Explicit `TODO` comments / placeholder returns.      |
@@ -661,7 +656,7 @@ Base path: `/api`. Auth via `Authorization: Bearer <JWT>` unless marked "Public"
 
 1. Should physical tokens allow multiple lifetime checkins (drop `checkins.token_id UNIQUE`) or mint new token rows per reuse?
 2. Is the `checkin_opens_at` gate enforced server-side? Currently availability endpoint returns an informational message but `reserve` does not reject pre-open reservations.
-3. Who will own cross-event admin features (create event, seed racks, import physical tokens)? No endpoints exist; likely Supabase Studio + direct SQL for now.
+3. Who will own cross-event admin features (create event, seed racks, import physical tokens)? No endpoints exist; oggi SQL diretto (es. editor Postgres su Railway) o script.
 4. Rate limit placement: in-app (slowapi middleware) or edge (Cloudflare / reverse proxy)?
 5. Should reservation SMS be sent synchronously (blocking the HTTP response) or via a queue? No queue exists.
 
@@ -673,7 +668,7 @@ If the repo grows beyond what this doc covers, re-run exploration in this order:
 
 1. `Glob **/*` then `ls` of `backend/` and `frontend/` to detect new directories.
 2. Read [README.md](../README.md) + [docker-compose.yml](../docker-compose.yml) + [env.example](../env.example) for intent + topology.
-3. Read [supabase/schema.sql](../supabase/schema.sql) before any ORM file — the SQL is authoritative.
+3. Read [db/schema.sql](../db/schema.sql) before any ORM file — the SQL is authoritative.
 4. Walk backend: `main.py → config.py → database.py → api/*.py → services/*.py → models/*.py → schemas/*.py`.
 5. Walk frontend: `main.tsx → App.tsx → api/client.ts → stores/authStore.ts → pages/*.tsx`.
 6. Grep for `TODO`, `FIXME`, `placeholder`, `stub` — each one is a known gap worth noting in §8.

@@ -1,6 +1,6 @@
 # Entity-Relationship Diagram — Dottò
 
-Defined in [supabase/schema.sql](../../supabase/schema.sql) and mirrored in SQLAlchemy [backend/app/models/](../../backend/app/models/).
+Defined in [db/schema.sql](../../db/schema.sql) and mirrored in SQLAlchemy [backend/app/models/](../../backend/app/models/).
 
 ```mermaid
 erDiagram
